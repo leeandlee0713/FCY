@@ -9,7 +9,8 @@ fs.mkdirSync(out, { recursive: true });
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 await page.setContent('<canvas id=c width=1280 height=720></canvas>');
-await page.evaluate(() => {
+const KIT = (process.env.KITS || '#e02525,#f1f1f1,#1f55d6,#101a40').split(',');
+await page.evaluate(KIT => {
   const c = document.getElementById('c'), g = c.getContext('2d');
   const Q = [[190, 130], [1090, 130], [1250, 650], [30, 650]]; // 원경 좌, 원경 우, 근경 우, 근경 좌
   // 월드(x: 0..105 길이, y: 0..68 폭, y=0 이 원경) → 화면
@@ -64,8 +65,8 @@ await page.evaluate(() => {
     line([[105, 24.84], [99.5, 24.84], [99.5, 43.16], [105, 43.16]]);
     line(Array.from({ length: 40 }, (_, i) => [52.5 + 9.15 * Math.cos(i / 40 * 6.283), 34 + 9.15 * Math.sin(i / 40 * 6.283)]));
     const ps = [];
-    RED.forEach((r, i) => ps.push([st.rc[0] + r[0] + Math.sin(t * ph[i][2] + ph[i][0]) * 1.3, st.rc[1] + r[1] * ws + Math.cos(t * ph[i][2] + ph[i][1]) * 1.3, '#e02525', '#f1f1f1']));
-    BLUE.forEach((r, i) => ps.push([st.bc[0] + r[0] + Math.sin(t * ph[i + 10][2] + ph[i + 10][0]) * 1.3, st.bc[1] + r[1] * ws + Math.cos(t * ph[i + 10][2] + ph[i + 10][1]) * 1.3, '#1f55d6', '#101a40']));
+    RED.forEach((r, i) => ps.push([st.rc[0] + r[0] + Math.sin(t * ph[i][2] + ph[i][0]) * 1.3, st.rc[1] + r[1] * ws + Math.cos(t * ph[i][2] + ph[i][1]) * 1.3, KIT[0], KIT[1]]));
+    BLUE.forEach((r, i) => ps.push([st.bc[0] + r[0] + Math.sin(t * ph[i + 10][2] + ph[i + 10][0]) * 1.3, st.bc[1] + r[1] * ws + Math.cos(t * ph[i + 10][2] + ph[i + 10][1]) * 1.3, KIT[2], KIT[3]]));
     ps.push([5 + (b[0] - 52) * 0.05, 34 + (b[1] - 34) * 0.15, '#f5d400', '#222']);
     ps.push([100 + (b[0] - 52) * 0.05, 34 + (b[1] - 34) * 0.15, '#7a2fd0', '#222']);
     ps.sort((a, c) => a[1] - c[1]);
@@ -73,7 +74,7 @@ await page.evaluate(() => {
     const [bx, by] = proj(b[0], b[1]), [bx2] = proj(b[0] + 1, b[1]);
     g.fillStyle = '#fff'; g.beginPath(); g.arc(bx, by - 3, Math.max(3.2, (bx2 - bx) * 0.38), 0, 7); g.fill();
   };
-});
+}, KIT);
 for (let i = 0; i < SEC * FPS; i++) {
   await page.evaluate(t => window.draw(t), i / FPS);
   const buf = await page.locator('#c').screenshot({ type: 'jpeg', quality: 95 });

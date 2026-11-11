@@ -18,12 +18,14 @@
 
   // ---------- 색 이름 ----------
   function colorName(sp) {
+    sp = sp.show || sp; // 화면 표시용 색(덜 섞인 색)이 있으면 그것으로 이름을 붙인다
     if (sp.kind === 'white') return '흰색';
     if (sp.kind === 'black') return '검은색';
-    if (sp.kind === 'gray') return '회색';
-    return vision.hueName(sp.h);
+    if (sp.kind === 'gray') return sp.v < 0.45 ? '어두운 회색' : '회색';
+    // 남색·암적색처럼 어두운 유니폼은 '어두운 ○○색'으로 부른다
+    return (sp.v < 0.42 ? '어두운 ' : '') + vision.hueName(sp.h);
   }
-  const css = sp => `rgb(${sp.r},${sp.g},${sp.b})`;
+  const css = sp => { const c = sp.show || sp; return `rgb(${c.r},${c.g},${c.b})`; };
 
   // ---------- 영상 로드 ----------
   const once = (el, ev, ms) => new Promise((res, rej) => {
@@ -154,11 +156,16 @@
     S.specA = S.specB = null; S.pair = []; invalidate();
     if (!S.samples.length) return;
     if (!S.clusters) {
-      const cfg = detectCfg(true), bins = [];
-      for (const img of S.samples) bins.push(...vision.detect(img, cfg).otherBins);
-      S.clusters = vision.clusterKits(bins, S.grassHue, S.grassTol);
+      const cfg = detectCfg(true), feats = [];
+      const gr = [0, 0, 0];
+      for (const img of S.samples) {
+        const r = vision.detect(img, cfg);
+        feats.push(...r.feats);
+        r.grassRgb.forEach((v, k) => { gr[k] += v / S.samples.length; });
+      }
+      S.clusters = vision.clusterTeams(feats, gr);
     }
-    S.pair = vision.teamPair(S.clusters).map(c => c.spec);
+    S.pair = S.clusters.map(c => c.spec);
     const box = $('team-pick');
     box.innerHTML = '';
     if (!S.pair.length) {
@@ -175,7 +182,7 @@
       box.appendChild(b);
     });
     // 카메라 종류 등을 바꿔 다시 계산했을 때는 앞서 고른 팀을 유지한다
-    const keep = prev ? S.pair.findIndex(sp => colorName(sp) === colorName(prev)) : -1;
+    const keep = prev ? S.pair.findIndex(sp => vision.labDist(sp.lab, prev.lab) < 18) : -1;
     if (keep >= 0) pickTeam(keep, true); else $('team-name').textContent = '위 두 색 중 분석할 팀을 선택해 주세요.';
   }
 

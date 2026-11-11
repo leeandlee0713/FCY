@@ -21,22 +21,24 @@
     return d > 180 ? 360 - d : d;
   }
 
-  /** 유니폼 색 → 매칭 규칙 */
+  /** sRGB → CIE Lab. 어두운 색끼리도 밝기·색조 차이를 고르게 잴 수 있는 색 공간 */
+  function rgb2lab(r, g, b) {
+    const lin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    const R = lin(r), G = lin(g), B = lin(b);
+    const f = t => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+    const x = f((0.4124 * R + 0.3576 * G + 0.1805 * B) / 0.95047), y = f(0.2126 * R + 0.7152 * G + 0.0722 * B);
+    const z = f((0.0193 * R + 0.1192 * G + 0.9505 * B) / 1.08883);
+    return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+  }
+  const labDist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+
+  /** 유니폼 색 견본: RGB + HSV + Lab + 대략적인 종류 */
   function makeSpec(r, g, b) {
     const [h, s, v] = rgb2hsv(r, g, b);
     let kind;
     if (s < 0.2) kind = v > 0.62 ? 'white' : v < 0.3 ? 'black' : 'gray';
     else kind = v < 0.16 ? 'black' : 'chroma';
-    return { r, g, b, h, s, v, kind };
-  }
-
-  function matchSpec(h, s, v, sp) {
-    switch (sp.kind) {
-      case 'chroma': return s >= 0.22 && v >= 0.12 && hueDiff(h, sp.h) <= 20;
-      case 'white': return s < 0.25 && v > 0.6;
-      case 'black': return v < 0.26;
-      default: return s < 0.25 && v >= 0.3 && v <= 0.62;
-    }
+    return { r, g, b, h, s, v, kind, lab: rgb2lab(r, g, b) };
   }
 
   const GRASS_TOL = 26;
@@ -90,27 +92,23 @@
     return m;
   }
 
-  const BIN_COUNT = 15; // 12 hue + white, black, gray
-  function colorBin(h, s, v) {
-    if (v < 0.26) return 13;
-    if (s < 0.25) return v > 0.6 ? 12 : 14;
-    return (((h + 15) % 360) / 30) | 0; // 빨강(345~15도)이 한 칸에 들어오도록 15도 밀어서 나눈다
-  }
-
   /**
    * 한 프레임에서 선수(A/B/기타)와 공 후보를 찾는다.
    * cfg: { grassHue, grassTol, specA, specB|null, mask|null, collectOther }
+   * 팀 구분은 픽셀 단위 색 규칙이 아니라, 선수 덩어리마다 상체(유니폼) 대표색을 뽑아 두 팀 견본색과의 거리로 한다.
+   * 그래서 남색·검정처럼 어두운 유니폼끼리도 구분된다.
    */
   function detect(img, cfg) {
     const d = img.data, W = img.width, H = img.height, N = W * H;
     const kind = new Uint8Array(N); // 0 배경, 1 전경, 2 흰색(라인·공)
-    const cls = new Uint8Array(N); // 1 A, 2 B
     const grass = new Uint8Array(N);
     const white = new Uint8Array(N);
     const sat = new Uint8Array(N), val = new Uint8Array(N);
-    let gS = 0, gV = 0, gN = 0;
+    let gS = 0, gV = 0, gN = 0, gR = 0, gG = 0, gB = 0;
     const { specA, specB, grassHue } = cfg;
     const gTol = cfg.grassTol || GRASS_TOL;
+    // 흰 유니폼 팀이 있으면 흰 픽셀도 선수 몸으로 본다 (없으면 흰색은 라인·공)
+    const whiteBody = !!cfg.whiteAsBody || (specA && specA.kind === 'white') || (specB && specB.kind === 'white');
 
     for (let i = 0, p = 0; i < N; i++, p += 4) {
       const r = d[p], g = d[p + 1], b = d[p + 2];
@@ -127,13 +125,10 @@
       }
       const s = mx === 0 ? 0 : df / mx, v = mx / 255;
       sat[i] = s * 255; val[i] = v * 255;
-      if (s >= 0.15 && v >= 0.1 && hueDiff(h, grassHue) <= gTol) { grass[i] = 1; gS += s; gV += v; gN++; continue; }
-      const a = specA && matchSpec(h, s, v, specA);
-      const bb = !a && specB && matchSpec(h, s, v, specB);
-      if (a) cls[i] = 1; else if (bb) cls[i] = 2;
+      if (s >= 0.15 && v >= 0.1 && hueDiff(h, grassHue) <= gTol) { grass[i] = 1; gS += s; gV += v; gN++; gR += r; gG += g; gB += b; continue; }
       const wh = s < 0.25 && v > 0.6;
       if (wh) white[i] = 1;
-      kind[i] = !a && !bb && wh && !cfg.whiteAsBody ? 2 : 1;
+      kind[i] = wh && !whiteBody ? 2 : 1;
     }
 
     // 경기장 영역 = 가장 큰 "연결된 잔디 덩어리". 관중석·광고판 속 초록색은 필드와 이어져 있지 않으므로 빠진다.
@@ -234,7 +229,6 @@
     }
 
     // 흰색 유니폼을 선수로 볼 때: 가로로 길게 이어진 흰색(경기장 라인)은 선수 덩어리에서 뺀다
-    const whiteBody = cfg.whiteAsBody || (specA && specA.kind === 'white') || (specB && specB.kind === 'white');
     if (whiteBody) {
       const maxRun = Math.max(10, Math.round(W * 0.045));
       for (let y = 0; y < H; y++) {
@@ -242,7 +236,7 @@
         for (let x = 0; x <= W; x++) {
           const i = y * W + x;
           if (x < W && white[i] && kind[i] === 1) { run++; continue; }
-          if (run > maxRun) for (let k = 1; k <= run; k++) { kind[i - k] = 2; cls[i - k] = 0; }
+          if (run > maxRun) for (let k = 1; k <= run; k++) kind[i - k] = 2;
           run = 0;
         }
       }
@@ -255,13 +249,12 @@
     for (let i0 = 0; i0 < N; i0++) {
       if (!kind[i0] || labels[i0]) continue;
       const k = kind[i0], id = comps.length + 1;
-      let sp = 0, area = 0, nA = 0, nB = 0, minx = W, maxx = 0, miny = H, maxy = 0;
+      let sp = 0, area = 0, minx = W, maxx = 0, miny = H, maxy = 0;
       stack[sp++] = i0; labels[i0] = id;
       while (sp) {
         const i = stack[--sp];
         const x = i % W, y = (i / W) | 0;
         area++;
-        if (cls[i] === 1) nA++; else if (cls[i] === 2) nB++;
         if (x < minx) minx = x; if (x > maxx) maxx = x;
         if (y < miny) miny = y; if (y > maxy) maxy = y;
         for (let dy = -1; dy <= 1; dy++) {
@@ -275,7 +268,7 @@
           }
         }
       }
-      comps.push({ id, k, area, nA, nB, minx, maxx, miny, maxy, ids: [id] });
+      comps.push({ id, k, area, minx, maxx, miny, maxy, ids: [id] });
     }
 
     const maxH = H * 0.4, maxW = W * 0.25, minH = Math.max(5, H * 0.012);
@@ -297,7 +290,7 @@
           const mh = Math.max(a.maxy - a.miny, b.maxy - b.miny) + 1;
           const th = Math.max(a.maxy, b.maxy) - Math.min(a.miny, b.miny) + 1;
           if (gap > Math.max(3, mh * 0.35) || th > maxH) continue;
-          a.area += b.area; a.nA += b.nA; a.nB += b.nB;
+          a.area += b.area;
           a.minx = Math.min(a.minx, b.minx); a.maxx = Math.max(a.maxx, b.maxx);
           a.miny = Math.min(a.miny, b.miny); a.maxy = Math.max(a.maxy, b.maxy);
           a.ids = a.ids.concat(b.ids);
@@ -307,6 +300,35 @@
         }
       }
     }
+
+    // 선수 덩어리의 유니폼 대표색: 상체(위에서 15~55% 높이) 픽셀의 채널별 중앙값
+    const torso = c => {
+      const ids = c.ids.length === 1 ? null : new Set(c.ids), id0 = c.ids[0];
+      const hh = c.maxy - c.miny + 1, t0 = c.miny + Math.floor(hh * 0.15), t1 = c.miny + Math.ceil(hh * 0.55);
+      const rs = [], gs = [], bs = [], ar = [], ag = [], ab = [], ir = [], ig = [], ib = [];
+      let nw = 0;
+      for (let y = c.miny; y <= c.maxy; y++) {
+        for (let x = c.minx; x <= c.maxx; x++) {
+          const i = y * W + x, l = labels[i];
+          if (ids ? !ids.has(l) : l !== id0) continue;
+          const p = i * 4;
+          nw += white[i];
+          ar.push(d[p]); ag.push(d[p + 1]); ab.push(d[p + 2]);
+          if (y < t0 || y > t1) continue;
+          rs.push(d[p]); gs.push(d[p + 1]); bs.push(d[p + 2]);
+          // 가장자리 픽셀은 잔디색과 섞여 있으므로, 사방이 선수 몸인 안쪽 픽셀을 따로 모은다
+          if (x > 0 && x < W - 1 && y > 0 && y < H - 1 && kind[i - 1] === 1 && kind[i + 1] === 1 && kind[i - W] === 1 && kind[i + W] === 1) {
+            ir.push(d[p]); ig.push(d[p + 1]); ib.push(d[p + 2]);
+          }
+        }
+      }
+      const med = a => a.sort((x, y) => x - y)[a.length >> 1];
+      const use = ir.length >= 3 ? [ir, ig, ib] : rs.length >= 3 ? [rs, gs, bs] : [ar, ag, ab];
+      const rgb = [med(use[0]), med(use[1]), med(use[2])];
+      return { rgb, lab: rgb2lab(rgb[0], rgb[1], rgb[2]), whiteFrac: nw / Math.max(1, ar.length) };
+    };
+    const sep = specA && specB ? labDist(specA.lab, specB.lab) : 45;
+    const lim = Math.max(14, sep * 0.55);
 
     const out = { A: [], B: [], other: [], balls: [], W, H, pitchTop, pitchBottom, pitchLeft, pitchRight, mid };
     const players = [];
@@ -330,15 +352,17 @@
         probe(fcx, c.maxy, 0, 1) && probe(c.minx, c.maxy, -1, 0) && probe(c.maxx, c.maxy, 1, 0);
       if (footOK && h >= minH && asp >= 0.7 && asp <= 6 && c.area >= w * h * 0.2 && c.area >= 8) {
         const o = { x: (c.minx + c.maxx + 1) / 2 / W, y: (c.maxy + 1) / H, w: w / W, h: h / H, c };
-        if (c.nA >= c.area * 0.12 && c.nA >= c.nB * 1.3) out.A.push(o);
-        else if (c.nB >= c.area * 0.12 && c.nB > c.nA) out.B.push(o);
+        o.f = torso(c);
+        const dA = specA ? labDist(o.f.lab, specA.lab) : Infinity, dB = specB ? labDist(o.f.lab, specB.lab) : Infinity;
+        if (dA <= lim && dA <= dB) out.A.push(o);
+        else if (dB <= lim) out.B.push(o);
         else out.other.push(o);
         players.push(c);
       } else small.push(c);
     }
 
     // 공 후보: 작고 둥근 흰색(또는 미분류) 덩어리
-    const cands = comps.filter(c => c.k === 2).concat(small.filter(c => !c.nA && !c.nB));
+    const cands = comps.filter(c => c.k === 2).concat(small);
     for (const c of cands) {
       const w = c.maxx - c.minx + 1, h = c.maxy - c.miny + 1;
       if (w > maxBall || h > maxBall || c.area < 2) continue;
@@ -365,31 +389,19 @@
     out.balls.sort((a, b) => (b.white - a.white) || (b.r - a.r));
     if (out.balls.length > 14) out.balls.length = 14;
 
-    // 상대 팀 색 자동 추정용: 미분류 선수의 주된 색
+    // 두 팀 색 자동 추정용: 선수로 보이는 덩어리들의 유니폼 대표색
     if (cfg.collectOther) {
-      out.otherBins = [];
-      for (const o of out.other) {
-        const c = o.c;
-        if (o.h * H < minH * 1.2 || o.h * H < o.w * W * 1.1) continue;
-        const ids = new Set(c.ids);
-        const bins = new Float64Array(BIN_COUNT * 4);
-        for (let y = c.miny; y <= c.maxy; y++) {
-          for (let x = c.minx; x <= c.maxx; x++) {
-            const i = y * W + x;
-            if (!ids.has(labels[i])) continue;
-            const p = i * 4;
-            const [h, s, v] = rgb2hsv(d[p], d[p + 1], d[p + 2]);
-            const bn = colorBin(h, s, v) * 4;
-            bins[bn]++; bins[bn + 1] += d[p]; bins[bn + 2] += d[p + 1]; bins[bn + 3] += d[p + 2];
-          }
-        }
+      out.feats = [];
+      out.grassRgb = gN ? [gR / gN, gG / gN, gB / gN] : [60, 120, 60];
+      for (const o of out.A.concat(out.B, out.other)) {
+        const c = o.c, cw = c.maxx - c.minx + 1, ch = c.maxy - c.miny + 1;
+        if (ch < minH * 1.2 || ch < cw * 1.1) continue;
         // 거의 전부 흰색이면서 가늘거나 속이 빈 덩어리는 선수가 아니라 라인 조각이다
-        const cw = c.maxx - c.minx + 1, ch = c.maxy - c.miny + 1;
-        if (bins[12 * 4] > c.area * 0.88 && (cw < 4 || c.area < cw * ch * 0.45 || ch > cw * 4.5)) continue;
-        out.otherBins.push(bins);
+        if (o.f.whiteFrac > 0.88 && (cw < 4 || c.area < cw * ch * 0.45 || ch > cw * 4.5)) continue;
+        out.feats.push({ lab: o.f.lab, rgb: o.f.rgb });
       }
     }
-    for (const k of ['A', 'B', 'other']) for (const o of out[k]) delete o.c;
+    for (const k of ['A', 'B', 'other']) for (const o of out[k]) { delete o.c; delete o.f; }
     return out;
   }
 
@@ -503,52 +515,53 @@
     return best;
   }
 
-  /** 선수 덩어리들의 주된 색을 모아 유니폼 색 후보(득표순)를 만든다 */
-  function clusterKits(binsList, grassHue, grassTol, minVotes) {
-    const gt = Math.max(32, (grassTol || GRASS_TOL) + 6);
-    const votes = new Float64Array(BIN_COUNT), sums = new Float64Array(BIN_COUNT * 4);
-    for (const bins of binsList) {
-      let total = 0;
-      for (let b = 0; b < BIN_COUNT; b++) total += bins[b * 4];
-      // 피부색(주황 계열)·검정(머리, 축구화)은 유니폼일 가능성이 낮아 가중치를 낮춘다
-      const wv = b => bins[b * 4] * (b === 1 || b === 13 ? 0.45 : 1);
-      // 유채색: 저해상도에서는 유니폼 가장자리가 잔디색과 섞여 색상이 잔디 쪽으로 밀린다.
-      // 그래서 충분히 많은 색 중 잔디에서 가장 먼 색상을 유니폼 색으로 본다.
-      let cmax = 0;
-      for (let b = 0; b < 12; b++) if (hueDiff(b * 30, grassHue) >= gt && wv(b) > cmax) cmax = wv(b);
-      let best = -1, far = -1;
-      for (let b = 0; b < 12; b++) {
-        const hd = hueDiff(b * 30, grassHue);
-        if (hd < gt || !wv(b) || wv(b) < cmax * 0.35) continue;
-        if (hd > far) { far = hd; best = b; }
-      }
-      let bc = best >= 0 ? cmax : 0;
-      for (let b = 12; b < BIN_COUNT; b++) if (wv(b) > bc) { bc = wv(b); best = b; }
-      if (best < 0 || bins[best * 4] < total * 0.15) continue;
-      votes[best]++;
-      for (let k = 0; k < 4; k++) sums[best * 4 + k] += bins[best * 4 + k];
-    }
-    const out = [];
-    for (let b = 0; b < BIN_COUNT; b++) {
-      if (votes[b] < (minVotes || 3)) continue;
-      const n = sums[b * 4];
-      out.push({ bin: b, votes: votes[b], spec: makeSpec(Math.round(sums[b * 4 + 1] / n), Math.round(sums[b * 4 + 2] / n), Math.round(sums[b * 4 + 3] / n)) });
-    }
-    return out.sort((x, y) => y.votes - x.votes);
-  }
-
   /**
-   * 유니폼 색 후보(득표순)에서 두 팀의 필드 플레이어 색을 고른다.
-   * 가장 많이 보이는 색이 한 팀, 그 색과 뚜렷이 다른 색 중 가장 많이 보이는 색이 다른 팀.
-   * 골키퍼·심판처럼 한두 명만 입은 색(1위의 20% 미만)과 피부색 계열은 뒤로 미룬다.
+   * 선수 덩어리들의 유니폼 대표색(Lab)을 두 무리로 나눠 두 팀의 색을 찾는다.
+   * 가장 빽빽한 색 무리가 한 팀, 거기서 충분히 떨어진 다른 빽빽한 무리가 다른 팀.
+   * 골키퍼·심판처럼 수가 적은 색은 무리를 이루지 못해 빠진다.
+   * 반환: [{ spec, votes }] (많이 보이는 순, 최대 2개)
    */
-  function teamPair(clusters) {
-    if (!clusters.length) return [];
-    const w = c => c.votes * (c.bin === 1 ? 0.5 : 1);
-    const sorted = clusters.slice().sort((x, y) => w(y) - w(x));
-    const first = sorted[0], floor = Math.max(3, w(first) * 0.2);
-    const second = sorted.find(c => c !== first && w(c) >= floor && kitDistance(first.spec, c.spec) >= 30);
-    return second ? [first, second] : [first];
+  function clusterTeams(feats, grassRgb) {
+    const n = feats.length;
+    if (n < 6) return [];
+    const dens = feats.map(f => { let k = 0; for (const g of feats) if (labDist(f.lab, g.lab) < 15) k++; return k; });
+    let i1 = 0;
+    for (let i = 1; i < n; i++) if (dens[i] > dens[i1]) i1 = i;
+    let i2 = -1, best = 0;
+    for (let i = 0; i < n; i++) {
+      const dd = labDist(feats[i].lab, feats[i1].lab);
+      if (dd < 12 || dens[i] < Math.max(3, dens[i1] * 0.15)) continue;
+      const sc = dens[i] * Math.min(1, dd / 30);
+      if (sc > best) { best = sc; i2 = i; }
+    }
+    const med = a => a.sort((x, y) => x - y)[a.length >> 1];
+    const center = idx => [0, 1, 2].map(k => med(idx.map(i => feats[i].lab[k])));
+    let cs = i2 < 0 ? [feats[i1].lab] : [feats[i1].lab, feats[i2].lab];
+    let groups = [];
+    for (let it = 0; it < 8; it++) {
+      groups = cs.map(() => []);
+      const sepNow = cs.length > 1 ? labDist(cs[0], cs[1]) : 45, lim = Math.max(14, sepNow * 0.55);
+      for (let i = 0; i < n; i++) {
+        let bk = -1, bd = lim;
+        cs.forEach((c, k) => { const dd = labDist(feats[i].lab, c); if (dd <= bd) { bd = dd; bk = k; } });
+        if (bk >= 0) groups[bk].push(i);
+      }
+      cs = cs.map((c, k) => (groups[k].length ? center(groups[k]) : c));
+    }
+    const out = groups.map(g => {
+      if (!g.length) return null;
+      const rgb = [0, 1, 2].map(k => med(g.map(i => feats[i].rgb[k])));
+      const spec = makeSpec(rgb[0], rgb[1], rgb[2]);
+      // 화면에 보여 줄 색·이름: 작은 선수는 잔디색이 섞여 흐려지므로, 잔디색에서 가장 먼(덜 섞인) 선수들의 색을 쓴다
+      if (grassRgb && g.length >= 4) {
+        const gl = rgb2lab(grassRgb[0], grassRgb[1], grassRgb[2]);
+        const far = g.slice().sort((p, q) => labDist(feats[q].lab, gl) - labDist(feats[p].lab, gl)).slice(0, Math.max(2, Math.ceil(g.length * 0.25)));
+        spec.show = makeSpec(...[0, 1, 2].map(k => med(far.map(i => feats[i].rgb[k]))));
+      }
+      return { spec, votes: g.length };
+    }).filter(Boolean).sort((a, b) => b.votes - a.votes);
+    if (out.length > 1 && (out[1].votes < Math.max(3, out[0].votes * 0.2) || labDist(out[0].spec.lab, out[1].spec.lab) < 10)) out.length = 1;
+    return out;
   }
 
   /** 색상각 → 색 이름 구간 */
@@ -561,44 +574,6 @@
     if (h < 255) return '파란색';
     if (h < 290) return '보라색';
     return '분홍색';
-  }
-
-  /** 두 유니폼 색이 같은 팀으로 볼 만큼 비슷한지 (작을수록 비슷, Infinity = 다름) */
-  function kitDistance(want, sp) {
-    if (want.kind === 'chroma') {
-      if (sp.kind !== 'chroma') return Infinity;
-      const d = hueDiff(want.h, sp.h);
-      return d <= 15 || hueName(want.h) === hueName(sp.h) ? d : Infinity;
-    }
-    if (want.kind === sp.kind) return 0;
-    if (want.kind === 'white' && sp.kind === 'gray' && sp.v > 0.5) return 20;
-    if (want.kind === 'gray' && sp.kind !== 'chroma') return 25;
-    if (want.kind === 'black' && (sp.kind === 'gray' ? sp.v < 0.4 : sp.kind === 'chroma' && sp.v < 0.4)) return 20;
-    return Infinity;
-  }
-
-  /**
-   * 이용자가 고른 색 이름과 가장 가까운 후보를 분석 팀으로, 나머지 중 가장 많이 보이는 색을 상대 팀으로 정한다.
-   */
-  function assignTeams(want, clusters) {
-    if (!clusters.length) return { a: null, b: null };
-    // 골키퍼·심판처럼 한두 명만 입은 색은 팀으로 보지 않는다
-    const floor = Math.max(3, clusters[0].votes * 0.2);
-    let a = null, best = Infinity;
-    for (const c of clusters) {
-      if (c.votes < floor) continue;
-      const d = kitDistance(want, c.spec) - Math.min(10, c.votes / clusters[0].votes * 10);
-      if (d < best) { best = d; a = c; }
-    }
-    // 상대 팀: 남은 후보 중 가장 많이 보이는 색. 피부색 계열은 선수 몸이 잡힌 것일 수 있어 뒤로 미룬다
-    let b = null, bv = 0;
-    for (const c of clusters) {
-      if (c === a || c.votes < floor) continue;
-      if (a && kitDistance(a.spec, c.spec) < 30) continue;
-      const v = c.votes * (c.bin === 1 ? 0.5 : 1);
-      if (v > bv) { bv = v; b = c; }
-    }
-    return { a, b };
   }
 
   /** 카메라 이동 추정용 축소 흑백 이미지 */
@@ -640,5 +615,5 @@
     return { x: bx / gw, y: by / gh };
   }
 
-  FCY.vision = { rgb2hsv, hueDiff, makeSpec, matchSpec, estimateGrass, quadMask, detect, clusterKits, assignTeams, teamPair, hueName, toGray, estimateShift, GRASS_TOL };
+  FCY.vision = { rgb2hsv, rgb2lab, labDist, hueDiff, makeSpec, estimateGrass, quadMask, detect, clusterTeams, hueName, toGray, estimateShift, GRASS_TOL };
 })();
