@@ -218,9 +218,9 @@
     return { sizes, cost: dp[L][n] };
   }
 
-  function buildFormation(roles, avgCentroid) {
-    const K = roles.K;
-    const pos = roles.means.map(m => add(m, avgCentroid));
+  /** pos: 역할(선수)별 경기장 좌표 → 라인 구분, 등번호, 간격 통계 */
+  function buildFormation(pos) {
+    const K = pos.length;
     const order = pos.map((p, k) => k).sort((a, b) => pos[a].y - pos[b].y);
     let gk = -1;
     if (K === 11) gk = order.shift();
@@ -271,8 +271,14 @@
     if (gkEstimated) players.push({ x: 34, y: 5.5, num: 1, gk: true, estimated: true, role: -1 });
     const out = order.map(k => pos[k]);
     const xs = out.map(p => p.x), ys2 = out.map(p => p.y);
+    // 선수 간 간격(골키퍼 제외): 좌우 = 같은 라인에서 옆 선수와의 거리, 상하 = 앞뒤 라인 사이 거리
+    const gx = [], gy = [];
+    for (const g of groups) for (let i = 1; i < g.length; i++) gx.push(pos[g[i]].x - pos[g[i - 1]].x);
+    const lineY = groups.map(g => g.reduce((a, k) => a + pos[k].y, 0) / g.length);
+    for (let i = 1; i < lineY.length; i++) gy.push(lineY[i] - lineY[i - 1]);
+    const avg = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
     return {
-      label: lines.join('-'), lines, players, nums, gk, gkEstimated,
+      label: lines.join('-'), lines, players, nums, gk, gkEstimated, gapX: avg(gx), gapY: avg(gy),
       width: Math.max(...xs) - Math.min(...xs), depth: Math.max(...ys2) - Math.min(...ys2),
       outfield: order,
     };
@@ -761,7 +767,7 @@
     const validIdx = [];
     for (let i = 0; i < N; i++) if (rolesA.valid[i]) validIdx.push(i);
     const avgC = meanPt(validIdx.map(i => rolesA.offsets[i]));
-    const form = buildFormation(rolesA, avgC);
+    const form = buildFormation(rolesA.means.map(m => add(m, avgC)));
 
     const width = new Float64Array(N), depth = new Float64Array(N);
     for (let i = 0; i < N; i++) {
@@ -773,10 +779,36 @@
       }
       width[i] = x1 - x0; depth[i] = y1 - y0;
     }
+    // 시작 포메이션 구조: 두 팀 선수들의 움직임이 가장 적은(자리를 잡고 구조를 유지하는) 장면들의 배치
+    const speed = new Float64Array(N).fill(Infinity);
+    const allTracks = rolesA.tracks.concat(rolesB && rolesB.K >= 3 ? rolesB.tracks : []);
+    for (const i of validIdx) {
+      const a = Math.max(0, i - 1), b = Math.min(N - 1, i + 1);
+      if (a === b) continue;
+      let sum = 0;
+      for (const tr of allTracks) sum += Math.hypot(tr[b].x - tr[a].x, tr[b].y - tr[a].y);
+      speed[i] = sum / allTracks.length / ((b - a) * dt);
+    }
+    const sorted = validIdx.slice().sort((p, q) => speed[p] - speed[q]);
+    const nCalm = Math.min(sorted.length, Math.max(5, Math.round(sorted.length * 0.25)));
+    const calm = sorted.slice(0, nCalm).sort((p, q) => p - q);
+    const startForm = buildFormation(rolesA.tracks.map(tr => meanPt(calm.map(i => tr[i]))));
+    const segs = [];
+    for (const i of calm) {
+      const last = segs[segs.length - 1];
+      if (last && i - last[1] <= 2) last[1] = i; else segs.push([i, i]);
+    }
+    const start = {
+      form: startForm, frames: nCalm,
+      speed: calm.reduce((a, i) => a + speed[i], 0) / nCalm,
+      speedAll: validIdx.reduce((a, i) => a + (isFinite(speed[i]) ? speed[i] : 0), 0) / validIdx.length,
+      segments: segs.map(([a, b]) => [a * dt, (b + 1) * dt]),
+    };
+
     const S = { N, dt, full: full || !!(scale && scale.fixedX && scale.fixedY), A: rolesA, B: rolesB, ball, form, width, depth };
     const cnt = k => det.frames.reduce((a, f) => a + f[k].length, 0) / N;
     return {
-      full, form, scale: scale && { r: scale.r, measured: scale.measured, note: scale.note, center: scale.center },
+      full, form, start, scale: scale && { r: scale.r, measured: scale.measured, note: scale.note, center: scale.center },
       ballP: ballPatterns(S), oppP: oppPatterns(S),
       stats: {
         frames: N, validFrames: rolesA.nValid, avgA: cnt('A'), avgB: cnt('B'),

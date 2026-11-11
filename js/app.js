@@ -55,7 +55,7 @@
 
   async function loadVideo(src, name) {
     showError('upload-error'); showError('run-error');
-    for (const id of ['sec-setup', 'sec-run', 'sec-formation', 'sec-movement']) $(id).hidden = true;
+    for (const id of ['sec-setup', 'sec-run', 'sec-start', 'sec-formation', 'sec-movement']) $(id).hidden = true;
     stopAnims();
     if (S.url) URL.revokeObjectURL(S.url);
     S.url = URL.createObjectURL(src);
@@ -371,14 +371,14 @@
     showError('run-error');
     if (!S.specA) return showError('run-error', '영상에서 분석 대상 팀을 찾지 못했습니다. 1단계에서 유니폼 색을 다시 선택해 주세요.');
     S.busy = true;
-    $('btn-formation').disabled = $('btn-movement').disabled = true;
+    $('btn-start').disabled = $('btn-formation').disabled = $('btn-movement').disabled = true;
     try {
       const det = await ensureDetection();
       progress(1, '패턴 계산 중…');
       const res = analysis.analyze(det, { quad: S.quad, attack: S.attack, mode: S.mode });
       window.__lastAnalysis = res;
       try { await document.fonts.load('700 62px "Space Grotesk"'); } catch (e) { /* 기본 글꼴로 진행 */ }
-      if (kind === 'formation') showFormation(res); else showMovement(res);
+      if (kind === 'movement') showMovement(res); else showBoard(kind, res);
       $('progress').hidden = true;
     } catch (e) {
       console.error(e);
@@ -386,10 +386,11 @@
       showError('run-error', e.message || '분석 중 오류가 발생했습니다.');
     } finally {
       S.busy = false;
-      $('btn-formation').disabled = $('btn-movement').disabled = false;
+      $('btn-start').disabled = $('btn-formation').disabled = $('btn-movement').disabled = false;
       await seek((($('scrub').value / 1000) * S.duration) || 0);
     }
   }
+  $('btn-start').onclick = () => run('start');
   $('btn-formation').onclick = () => run('formation');
   $('btn-movement').onclick = () => run('movement');
 
@@ -404,23 +405,36 @@
     return notes.join(' ');
   }
 
-  function showFormation(res) {
+  /** kind: 'start' = 시작 포메이션 구조, 'formation' = 평균 선수 위치 */
+  function showBoard(kind, res) {
+    const isStart = kind === 'start', f = isStart ? res.start.form : res.form;
     const c = document.createElement('canvas');
-    board.renderFormation(c, res.form, 1);
+    board.renderFormation(c, f, 1, isStart ? 'STARTING STRUCTURE' : 'AVERAGE POSITION');
     const url = c.toDataURL('image/png');
-    $('formation-img').src = url; $('formation-dl').href = url;
+    $(`${kind}-img`).src = url; $(`${kind}-dl`).href = url;
     const s = res.stats;
     const stat = (v, l) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`;
-    $('formation-stats').innerHTML =
-      stat(res.form.label, `${teamLabel()} 평균 포메이션`) +
-      stat(`${s.avgWidth.toFixed(1)}m`, '평균 좌우 폭') +
-      stat(`${s.avgDepth.toFixed(1)}m`, '평균 앞뒤 길이') +
-      stat(`${s.validFrames} / ${s.frames}`, '분석에 쓰인 프레임') +
-      stat(s.avgA.toFixed(1), '프레임당 검출 선수(분석 팀)') +
-      stat(`${Math.round(s.ballRate * 100)}%`, '공 추적 성공 프레임');
-    $('formation-note').textContent = quality(res);
-    $('sec-formation').hidden = false;
-    $('sec-formation').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const m = v => (v == null ? '–' : `${v.toFixed(1)}m`);
+    let html =
+      stat(f.label, isStart ? `${teamLabel()} 시작 구조` : `${teamLabel()} 평균 배치`) +
+      stat(isStart ? `${res.start.frames} / ${s.validFrames}` : `${s.validFrames} / ${s.frames}`, isStart ? '기준이 된 정적 장면(프레임)' : '분석에 쓰인 프레임') +
+      stat(m(f.gapX), '선수 간 평균 좌우 간격 (GK 제외)') +
+      stat(m(f.gapY), '선수 간 평균 상하 간격 (GK 제외)') +
+      stat(m(f.width), '팀 전체 좌우 폭') +
+      stat(m(f.depth), '팀 전체 앞뒤 길이');
+    let note;
+    if (isStart) {
+      html += stat(`${res.start.speed.toFixed(1)} m/s`, '기준 장면의 평균 이동 속도') + stat(`${res.start.speedAll.toFixed(1)} m/s`, '영상 전체 평균 이동 속도');
+      const segs = res.start.segments.map(([a, b]) => `${a.toFixed(1)}~${b.toFixed(1)}초`);
+      note = `두 팀 선수들의 움직임이 가장 적어 구조를 유지하고 있다고 판단되는 장면(전체의 하위 25%)의 배치를 평균했습니다. 기준 구간: ${segs.slice(0, 8).join(', ')}${segs.length > 8 ? ' 외' : ''}. `;
+    } else {
+      html += stat(s.avgA.toFixed(1), '프레임당 검출 선수(분석 팀)') + stat(`${Math.round(s.ballRate * 100)}%`, '공 추적 성공 프레임');
+      note = '영상 전체에서 각 선수의 위치를 평균했습니다. ';
+    }
+    $(`${kind}-stats`).innerHTML = html;
+    $(`${kind}-note`).textContent = note + '좌우 간격은 같은 라인에서 옆 선수와의 거리, 상하 간격은 앞뒤 라인 사이의 거리입니다. ' + quality(res);
+    $(`sec-${kind}`).hidden = false;
+    $(`sec-${kind}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function stopAnims() {

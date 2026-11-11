@@ -195,11 +195,11 @@
   }
 
   /** 평균 포메이션 한 장 그리기 */
-  function renderFormation(canvas, f, scale) {
+  function renderFormation(canvas, f, scale, title) {
     const ctx = setup(canvas, scale);
     drawPitch(ctx);
     drawHeader(ctx, {
-      big: f.label,
+      title, big: f.label,
       legend: [
         { color: C.home, text: `HOME · ${f.label}` },
         { color: '#fff', ring: true, dim: true, text: f.gkEstimated ? '흰 테두리 = GK (추정 위치)' : '흰 테두리 = GK' },

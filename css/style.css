@@ -50,7 +50,7 @@ h3 small { color: var(--dim); font-weight: 500; }
 .btn.primary { background: var(--cyan); color: #062230; border-color: var(--cyan); font-size: 17px; padding: 16px 26px; box-shadow: 0 0 24px rgba(34,225,255,.28); }
 .btn.primary.alt { background: var(--mint); border-color: var(--mint); box-shadow: 0 0 24px rgba(98,214,168,.28); }
 .actions { display: flex; gap: 14px; flex-wrap: wrap; }
-.actions .btn { flex: 1 1 260px; }
+.actions .btn { flex: 1 1 220px; }
 
 .setup { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); gap: 26px; }
 .canvas-box { border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #000; line-height: 0; }
