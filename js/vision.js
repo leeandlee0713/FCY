@@ -107,6 +107,8 @@
     const cls = new Uint8Array(N); // 1 A, 2 B
     const grass = new Uint8Array(N);
     const white = new Uint8Array(N);
+    const sat = new Uint8Array(N), val = new Uint8Array(N);
+    let gS = 0, gV = 0, gN = 0;
     const { specA, specB, grassHue } = cfg;
     const gTol = cfg.grassTol || GRASS_TOL;
 
@@ -124,7 +126,8 @@
         if (h < 0) h += 360;
       }
       const s = mx === 0 ? 0 : df / mx, v = mx / 255;
-      if (s >= 0.15 && v >= 0.1 && hueDiff(h, grassHue) <= gTol) { grass[i] = 1; continue; }
+      sat[i] = s * 255; val[i] = v * 255;
+      if (s >= 0.15 && v >= 0.1 && hueDiff(h, grassHue) <= gTol) { grass[i] = 1; gS += s; gV += v; gN++; continue; }
       const a = specA && matchSpec(h, s, v, specA);
       const bb = !a && specB && matchSpec(h, s, v, specB);
       if (a) cls[i] = 1; else if (bb) cls[i] = 2;
@@ -184,6 +187,38 @@
     const gm = Math.min(gh - 1, Math.round(((pitchTop + pitchBottom) / 2) * H / G));
     const pitchLeft = rowMax[gm] >= 0 ? (rowMin[gm] * G) / W : 0;
     const pitchRight = rowMax[gm] >= 0 ? Math.min(1, ((rowMax[gm] + 1) * G) / W) : 1;
+
+    // 중앙선 + 센터서클 찾기 (경기장 한가운데의 기준점)
+    // 라인은 화질에 따라 잔디색이 섞여 옅은 초록으로 보이므로, "잔디 평균보다 뚜렷이 밝고 덜 진한 픽셀"을 라인으로 본다
+    let lineW = white;
+    if (cfg.findCenter && gN) {
+      // 주변(작은 창) 평균보다 밝고 덜 진한 픽셀 = 가는 선. 화면 전체 기준이 아니라 주변 대비라서 흐린 라인도 잡힌다
+      const IW = W + 1, iv = new Uint32Array(IW * (H + 1)), is = new Uint32Array(IW * (H + 1));
+      for (let y = 0; y < H; y++) {
+        let rv = 0, rs = 0;
+        for (let x = 0; x < W; x++) {
+          rv += val[y * W + x]; rs += sat[y * W + x];
+          iv[(y + 1) * IW + x + 1] = iv[y * IW + x + 1] + rv;
+          is[(y + 1) * IW + x + 1] = is[y * IW + x + 1] + rs;
+        }
+      }
+      const R = Math.max(4, Math.round(W / 160));
+      const vAbs = (gV / gN) * 255 + 38, sAbs = (gS / gN) * 255 - 28;
+      lineW = new Uint8Array(N);
+      for (let y = 0; y < H; y++) {
+        const y0 = Math.max(0, y - R), y1 = Math.min(H, y + R + 1);
+        for (let x = 0; x < W; x++) {
+          const i = y * W + x;
+          if (val[i] > vAbs && sat[i] < sAbs) { lineW[i] = 1; continue; }
+          const x0 = Math.max(0, x - R), x1 = Math.min(W, x + R + 1), n = (x1 - x0) * (y1 - y0);
+          const mv = (iv[y1 * IW + x1] - iv[y0 * IW + x1] - iv[y1 * IW + x0] + iv[y0 * IW + x0]) / n;
+          if (val[i] - mv < 16) continue;
+          const ms = (is[y1 * IW + x1] - is[y0 * IW + x1] - is[y1 * IW + x0] + is[y0 * IW + x0]) / n;
+          if (sat[i] - ms <= -10) lineW[i] = 1;
+        }
+      }
+    }
+    const mid = cfg.findCenter ? findCenter(lineW, pitch, G, gw, W, H, pitchTop * H, pitchBottom * H, cfg.debug) : null;
 
     const mask = cfg.mask;
     for (let y = 0; y < H; y++) {
@@ -273,7 +308,7 @@
       }
     }
 
-    const out = { A: [], B: [], other: [], balls: [], W, H, pitchTop, pitchBottom, pitchLeft, pitchRight };
+    const out = { A: [], B: [], other: [], balls: [], W, H, pitchTop, pitchBottom, pitchLeft, pitchRight, mid };
     const players = [];
     const small = [];
     for (const c of bodies) {
@@ -356,6 +391,116 @@
     }
     for (const k of ['A', 'B', 'other']) for (const o of out[k]) delete o.c;
     return out;
+  }
+
+  /**
+   * 잔디 위 흰 선에서 "중앙선 + 센터서클"을 찾는다 (옆에서 본 화면 기준: 중앙선이 세로에 가깝게 보임).
+   * 1) 흰 픽셀로 허프 변환을 해 길고 가파른 직선 후보를 뽑고
+   * 2) 그 직선 위에 중심이 있는 타원(센터서클)이 실제로 그려져 있는지 둘레를 따라 확인한다.
+   *    페널티박스 앞 선 같은 다른 세로선은 양쪽으로 퍼진 타원이 없어서 걸러진다.
+   * 반환: { x, y: 센터서클 중심, a: 가로 반지름, b: 세로 반지름 (정규화), m: 선의 기울기 dx/dy, score }
+   */
+  function findCenter(white, pitch, G, gw, W, H, yTop, yBot, dbg) {
+    const step = W > 900 ? 2 : 1, Q = W > 900 ? 4 : 2, qw = Math.ceil(W / Q), qh = Math.ceil(H / Q);
+    const wm = new Uint8Array(qw * qh), px = [], py = [];
+    for (let y = 0; y < H; y += step) {
+      const grow = ((y / G) | 0) * gw;
+      for (let x = 0; x < W; x += step) {
+        if (!white[y * W + x] || !pitch[grow + ((x / G) | 0)]) continue;
+        px.push(x); py.push(y); wm[((y / Q) | 0) * qw + ((x / Q) | 0)] = 1;
+      }
+    }
+    const n = px.length;
+    if (n < 60 || yBot - yTop < H * 0.2) return null;
+    const M = 41, BW = 3, off = H / 2, nb = Math.ceil((W + H) / BW) + 2;
+    const acc = new Uint16Array(M * nb);
+    for (let mi = 0; mi < M; mi++) {
+      const m = -1 + mi * 0.05, base = mi * nb;
+      for (let k = 0; k < n; k++) {
+        const b = ((px[k] - m * (py[k] - off) + off) / BW) | 0;
+        if (b >= 0 && b < nb) acc[base + b]++;
+      }
+    }
+    const need = ((yBot - yTop) / step) * 0.3;
+    const peaks = [];
+    for (let t = 0; t < 3; t++) {
+      let bv = 0, bi = -1;
+      for (let i = 0; i < acc.length; i++) if (acc[i] > bv) { bv = acc[i]; bi = i; }
+      if (bi < 0 || bv < need) break;
+      const mi = (bi / nb) | 0, b = bi % nb;
+      peaks.push({ m: -1 + mi * 0.05, x0: b * BW + BW / 2 - off });
+      for (let dm = -4; dm <= 4; dm++) for (let db = -14; db <= 14; db++) {
+        const mm = mi + dm, bb = b + db;
+        if (mm >= 0 && mm < M && bb >= 0 && bb < nb) acc[mm * nb + bb] = 0;
+      }
+    }
+    // 표본 대조용 마스크: 실제 원은 원근 때문에 정확한 타원이 아니므로 여유를 둔다 (1칸·2칸 팽창)
+    const dilate = src => {
+      const out = new Uint8Array(src.length);
+      for (let y = 0; y < qh; y++) for (let x = 0; x < qw; x++) {
+        if (!src[y * qw + x]) continue;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx >= 0 && yy >= 0 && xx < qw && yy < qh) out[yy * qw + xx] = 1;
+        }
+      }
+      return out;
+    };
+    const wm1 = dilate(wm), wm2 = dilate(wm1);
+    // 타원 둘레 표본 각도 (선이 지나가는 위·아래 부근은 제외)
+    const cs = [], sn = [];
+    for (let j = 0; j < 48; j++) {
+      const t = (j / 48) * Math.PI * 2;
+      if (Math.abs(Math.cos(t)) < 0.26) continue;
+      cs.push(Math.cos(t)); sn.push(Math.sin(t));
+    }
+    const fitScore = (mask, cx, cy, a, b) => {
+      let inF = 0, hit = 0, lN = 0, lH = 0, rN = 0, rH = 0;
+      for (let j = 0; j < cs.length; j++) {
+        const x = cx + a * cs[j], y = cy + b * sn[j];
+        if (x < 1 || y < 1 || x >= W - 1 || y >= H - 1) continue;
+        const h = mask[((y / Q) | 0) * qw + ((x / Q) | 0)];
+        inF++; hit += h;
+        if (cs[j] < 0) { lN++; lH += h; } else { rN++; rH += h; }
+      }
+      // 납작한 타원은 가로선 하나에도 들어맞으므로 인정하지 않는다
+      if (inF < 14 || b < Q * 6) return -1;
+      if ((lN >= 6 && lH < lN * 0.45) || (rN >= 6 && rH < rN * 0.45)) return -1;
+      return hit / inF + inF * 0.002; // 비슷하면 더 많이 보이는 쪽
+    };
+    // 1) 거칠게 훑기
+    let coarse = null;
+    const dy = Math.max(3, Math.round(H / 110));
+    for (const pk of peaks) {
+      for (let cy = yTop; cy <= yBot; cy += dy) {
+        const cx = pk.x0 + pk.m * (cy - off);
+        if (cx < -W * 0.1 || cx > W * 1.1) continue;
+        for (let a = W * 0.045; a <= W * 0.32; a *= 1.1) {
+          for (let ratio = 0.18; ratio <= 0.7; ratio += 0.04) {
+            const v = fitScore(wm2, cx, cy, a, a * ratio);
+            if (v >= 0.6 && (!coarse || v > coarse.v)) coarse = { v, cx, cy, a, ratio, m: pk.m };
+          }
+        }
+      }
+    }
+    if (dbg) Object.assign(dbg, { wm, qw, qh, peaks, coarse, need, n });
+    if (!coarse) return null;
+    // 2) 그 주변을 촘촘히 다시 맞추기
+    let best = null;
+    for (let ox = -8; ox <= 8; ox += 2) {
+      for (let oy = -dy; oy <= dy; oy += 2) {
+        for (let fa = 0.9; fa <= 1.101; fa += 0.025) {
+          for (let dr = -0.04; dr <= 0.041; dr += 0.01) {
+            const a = coarse.a * fa, ratio = Math.max(0.16, coarse.ratio + dr);
+            const v = fitScore(wm1, coarse.cx + ox, coarse.cy + oy, a, a * ratio);
+            if (v >= 0.66 && (!best || v > best.val)) {
+              best = { val: v, score: v, x: (coarse.cx + ox) / W, y: (coarse.cy + oy) / H, a: a / W, b: (a * ratio) / H, m: coarse.m };
+            }
+          }
+        }
+      }
+    }
+    return best;
   }
 
   /** 선수 덩어리들의 주된 색을 모아 유니폼 색 후보(득표순)를 만든다 */

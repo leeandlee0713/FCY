@@ -632,7 +632,33 @@
     });
   }
 
-  function metricScale(det, pan, attack, hf) {
+  /**
+   * 영상에서 인식한 중앙선·센터서클을 경기장 한가운데의 기준으로 삼는다.
+   * 인식된 프레임에서는 그 위치가 곧 정답이므로, 카메라 이동 추정값(pan)의 누적 오차를 여기에 맞춰 바로잡는다.
+   * 반환: { x, y: 기준 좌표계에서의 센터서클 중심(정규화), aPx: 가로 반지름(px), ratio: 세로/가로 반지름 비 } 또는 null
+   */
+  function centerAnchor(det, pan) {
+    const N = det.frames.length, idx = [];
+    for (let i = 0; i < N; i++) if (det.frames[i].mid) idx.push(i);
+    if (idx.length < Math.max(2, N * 0.03)) return null;
+    const st = idx.map(i => ({ x: det.frames[i].mid.x - pan[i].x, y: det.frames[i].mid.y - pan[i].y }));
+    const ref = { x: median(st.map(p => p.x)), y: median(st.map(p => p.y)) };
+    const drift = new Array(N).fill(null);
+    idx.forEach((i, k) => { drift[i] = { x: st[k].x - ref.x, y: st[k].y - ref.y }; });
+    const d = fillSeries(drift, Infinity, null);
+    let last = d.find(v => v) || { x: 0, y: 0 };
+    for (let i = 0; i < N; i++) {
+      const v = d[i] ? (last = d[i]) : last;
+      pan[i] = { x: pan[i].x + v.x, y: pan[i].y + v.y };
+    }
+    return {
+      x: ref.x, y: ref.y, seen: idx.length,
+      aPx: median(idx.map(i => det.frames[i].mid.a)) * det.W,
+      ratio: median(idx.map(i => (det.frames[i].mid.b * det.H) / (det.frames[i].mid.a * det.W))),
+    };
+  }
+
+  function metricScale(det, pan, attack, hf, center) {
     const W = det.W, Hh = det.H;
     if (!hf) throw new Error('영상에서 선수를 충분히 찾지 못했습니다. 경기장과 선수가 잘 보이는 영상인지 확인해 주세요.');
     const med = k => median(det.frames.map(f => f[k]));
@@ -650,6 +676,8 @@
       const pxPerM = ((xr - xl) * W) / wide;
       k = Math.max(0.5, Math.min(2, (pxPerM * PLAYER_M) / hf.at(yMid)));
     }
+    // 센터서클이 보이면 그 가로 반지름(9.15m)이 가장 정확한 축척 기준이다
+    if (center) k = Math.max(0.5, Math.min(2, ((center.aPx / 9.15) * PLAYER_M) / hf.at(center.y * Hh)));
     const hAt = y => hf.at(y) * k;
     // 깊이(m, 압축률 1 기준): ∫ PLAYER_M / h(y) dy
     const depth1 = y => (hf.b ? (PLAYER_M / (hf.b * k)) * Math.log(hf.at(y) / hf.hMed) : (PLAYER_M / (hf.hMed * k)) * y);
@@ -662,34 +690,41 @@
       const rr = (depth1(yBot) - depth1(yTop)) / span;
       if (rr > 0.12 && rr < 0.9) { r = rr; measured = true; }
     }
-    // 3) 보이는 끝을 실제 라인 위치에 맞춘다
-    const anchored = topSeen || botSeen;
-    const d0 = topSeen ? depth1(yTop) / r + near : botSeen ? depth1(yBot) / r - (span - near) : 0;
-    const xc = sidesSeen ? (xl + xr) / 2 : 0.5;
+    // 센터서클의 세로/가로 반지름 비가 곧 그 위치의 깊이 압축률이다
+    // (실제 중계 화면에서 손으로 잰 값과 일치해, 필드 끝으로 구한 값보다 우선한다)
+    if (center) { r = Math.max(0.12, Math.min(0.9, center.ratio)); measured = true; }
+    // 3) 보이는 기준(센터서클, 없으면 필드 끝)을 실제 위치에 맞춘다
+    const anchored = !!center || topSeen || botSeen;
+    const d0 = center ? depth1(center.y * Hh) / r - PW / 2
+      : topSeen ? depth1(yTop) / r + near : botSeen ? depth1(yBot) / r - (span - near) : 0;
+    const lenSeen = !!center || sidesSeen;
+    const xc = center ? center.x : sidesSeen ? (xl + xr) / 2 : 0.5;
     const map = (x, y) => {
       const py = y * Hh, X = ((x - xc) * W * PLAYER_M) / hAt(py), D = depth1(py) / r - d0;
       switch (attack) {
-        case 'left': return { x: (anchored ? PW : 0) - D, y: (sidesSeen ? PL / 2 : 0) - X };
+        case 'left': return { x: (anchored ? PW : 0) - D, y: (lenSeen ? PL / 2 : 0) - X };
         case 'up': return { x: (sidesSeen ? PW / 2 : 0) + X, y: (anchored ? PL : 0) - D };
         case 'down': return { x: (sidesSeen ? PW / 2 : 0) - X, y: D };
-        default: return { x: D, y: (sidesSeen ? PL / 2 : 0) + X };
+        default: return { x: D, y: (lenSeen ? PL / 2 : 0) + X };
       }
     };
-    const fixedX = side ? anchored : sidesSeen, fixedY = side ? sidesSeen : anchored;
+    const fixedX = side ? anchored : sidesSeen, fixedY = side ? lenSeen : anchored;
     let note = '선수 키(약 1.8m)와 경기장 규격(105×68m)의 비율로 화면 속 거리를 실제 거리로 환산해 전체 경기장 위에 배치했습니다';
-    note += measured ? ' (화면에 보이는 필드 끝으로 원근 보정).' : ' (원근은 참고 중계 화면에서 잰 기본값 사용).';
+    if (center) note = `영상 속 중앙선과 센터서클을 인식해 경기장 한가운데의 기준으로 삼고, 센터서클 크기(반지름 9.15m)와 선수 키로 실제 거리를 환산했습니다 (${center.seen}개 프레임에서 인식, 나머지는 카메라 이동 추정으로 연결).`;
+    else note += measured ? ' (화면에 보이는 필드 끝으로 원근 보정).' : ' (원근은 참고 중계 화면에서 잰 기본값 사용).';
     if (!fixedX || !fixedY) {
       const ax = !fixedX && !fixedY ? '경기장 위 절대 위치' : `경기장 ${!fixedY ? '길이' : '폭'} 방향의 절대 위치`;
       note += ` 필드가 잘려 보여 ${ax}는 화면만으로 알 수 없으므로 팀 중심을 기본 위치에 두었습니다.`;
     }
-    return { map, r, measured, note, fixedX, fixedY };
+    return { map, r, measured, note, fixedX, fixedY, center: !!center };
   }
 
   // ---------- 전체 분석 ----------
   function analyze(det, cfg) {
     const N = det.frames.length, dt = 1 / det.fps, full = cfg.mode === 'full';
     const H = homography(cfg.quad, [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }]);
-    const pan = det.frames.map((f, i) => (full ? { x: 0, y: 0 } : det.pan[i]));
+    const pan = det.frames.map((f, i) => (full ? { x: 0, y: 0 } : { ...det.pan[i] }));
+    const center = full || !(cfg.attack === 'right' || cfg.attack === 'left') ? null : centerAnchor(det, pan);
     const { track: btImg, found } = trackBall(det.frames.map((f, i) => f.balls.map(b => ({ ...b, x: b.x - pan[i].x, y: b.y - pan[i].y }))), dt);
     const hf = heightFit(det, pan);
     det = { ...det, frames: det.frames.map(f => ({ ...f })) }; // 원본 검출 결과는 건드리지 않는다
@@ -698,7 +733,7 @@
     if (full) {
       map = p => { const [u, v] = H(p.x, p.y); const q = orient(u, v, cfg.attack); return { x: q.x * PW, y: q.y * PL }; };
     } else {
-      scale = metricScale(det, pan, cfg.attack, hf);
+      scale = metricScale(det, pan, cfg.attack, hf, center);
       map = (p, i) => scale.map(p.x - pan[i].x, p.y - pan[i].y);
     }
     let A = det.frames.map((f, i) => f.A.map(p => map(p, i)));
@@ -738,10 +773,10 @@
       }
       width[i] = x1 - x0; depth[i] = y1 - y0;
     }
-    const S = { N, dt, full, A: rolesA, B: rolesB, ball, form, width, depth };
+    const S = { N, dt, full: full || !!(scale && scale.fixedX && scale.fixedY), A: rolesA, B: rolesB, ball, form, width, depth };
     const cnt = k => det.frames.reduce((a, f) => a + f[k].length, 0) / N;
     return {
-      full, form, scale: scale && { r: scale.r, measured: scale.measured, note: scale.note },
+      full, form, scale: scale && { r: scale.r, measured: scale.measured, note: scale.note, center: scale.center },
       ballP: ballPatterns(S), oppP: oppPatterns(S),
       stats: {
         frames: N, validFrames: rolesA.nValid, avgA: cnt('A'), avgB: cnt('B'),

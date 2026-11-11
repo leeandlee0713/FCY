@@ -147,6 +147,7 @@
       grassHue: S.grassHue, grassTol: S.grassTol, specA: collect ? null : S.specA, specB: collect ? null : S.specB,
       mask: S.mode === 'full' ? vision.quadMask(S.quad, W, H, 0.04) : null,
       collectOther: !!collect, whiteAsBody: !!collect,
+      findCenter: !collect && S.mode === 'partial' && (S.attack === 'right' || S.attack === 'left'),
     };
   }
 
@@ -206,6 +207,16 @@
       vctx.strokeStyle = '#fff'; vctx.lineWidth = 2;
       r.balls.slice(0, 4).forEach(b => { vctx.beginPath(); vctx.arc(b.x * W, b.y * H - b.r * W, 9, 0, 7); vctx.stroke(); });
       info = `현재 화면 검출 — 분석 대상 팀 ${r.A.length}명 · 상대 팀 ${r.B.length}명 · 공 후보 ${r.balls.length}개`;
+      if (r.mid) {
+        // 인식한 중앙선과 센터서클
+        const m = r.mid, k = (m.m * H) / W;
+        vctx.strokeStyle = '#ffe45c'; vctx.lineWidth = 2.5; vctx.setLineDash([8, 6]);
+        vctx.beginPath(); vctx.ellipse(m.x * W, m.y * H, m.a * W, m.b * H, 0, 0, 7); vctx.stroke();
+        vctx.beginPath();
+        vctx.moveTo((m.x + k * (r.pitchTop - m.y)) * W, r.pitchTop * H); vctx.lineTo((m.x + k * (r.pitchBottom - m.y)) * W, r.pitchBottom * H);
+        vctx.stroke(); vctx.setLineDash([]);
+        info += ' · 중앙선·센터서클 인식됨';
+      }
     }
     $('detect-info').textContent = info;
     // 경기장 영역 (고정 전체 화면 모드에서만 사용)
@@ -281,7 +292,7 @@
     full: '초록 사각형의 네 모서리를 경기장의 네 코너에 맞춰 주세요. 실제 경기장 좌표(105×68m)로 변환해 위치를 계산합니다.',
   };
   const markMode = seg('seg-mode', 'mode', () => { $('mode-hint').textContent = HINT[S.mode]; resetQuad(); S.clusters = null; autoTeams(); drawPreview(); });
-  seg('seg-attack', 'attack');
+  seg('seg-attack', 'attack', () => { invalidate(); drawPreview(); });
   $('mode-hint').textContent = HINT[S.mode];
   buildChips();
   let scrubBusy = false, scrubNext = null;
@@ -333,7 +344,7 @@
   }
 
   async function ensureDetection() {
-    const key = JSON.stringify([S.specA, S.specB, S.mode, S.mode === 'full' ? S.quad : 0]);
+    const key = JSON.stringify([S.specA, S.specB, S.mode, S.mode === 'full' ? S.quad : 0, S.attack === 'up' || S.attack === 'down']);
     if (S.det && S.detKey === key) return S.det;
     const N = Math.max(2, Math.floor(S.duration * FPS));
     const cfg = detectCfg(false);
@@ -342,8 +353,9 @@
     for (let i = 0; i < N; i++) {
       await seek((i + 0.5) / FPS);
       const img = grab();
-      const r = vision.detect(img, cfg);
-      frames.push({ A: r.A, B: r.B, balls: r.balls, top: r.pitchTop, bottom: r.pitchBottom, left: r.pitchLeft, right: r.pitchRight });
+      // 중앙선·센터서클 찾기는 계산이 무거워 두 프레임에 한 번만 한다 (사이 프레임은 분석 단계에서 이어 붙임)
+      const r = vision.detect(img, i % 2 ? { ...cfg, findCenter: false } : cfg);
+      frames.push({ A: r.A, B: r.B, balls: r.balls, top: r.pitchTop, bottom: r.pitchBottom, left: r.pitchLeft, right: r.pitchRight, mid: r.mid });
       const g = vision.toGray(img, 160, 90);
       if (prevG) { const s = vision.estimateShift(prevG, g, 160, 90); cx += s.x; cy += s.y; }
       pan.push({ x: cx, y: cy });

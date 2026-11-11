@@ -60,6 +60,7 @@ input[type=range] { flex: 1; accent-color: var(--cyan); min-width: 120px; }
 .legend-line { color: var(--dim); font-size: 13px; margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
 .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; margin-left: 8px; }
 .sw.home { background: var(--cyan); } .sw.away { background: var(--pink); } .sw.ball { background: #fff; border-radius: 50%; }
+.sw.mid { background: transparent; border: 2px dashed #ffe45c; border-radius: 50%; }
 .sw.quad { background: transparent; border: 2px solid var(--mint); }
 .field { margin-bottom: 22px; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
