@@ -70,7 +70,13 @@ input[type=range] { flex: 1; accent-color: var(--cyan); min-width: 120px; }
 .chip i { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(255,255,255,.35); }
 .chip.on { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan) inset; }
 .chip.auto { padding-left: 12px; }
-.team-name { margin: 12px 0 0; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 9px; }
+.team-name { margin: 0 0 18px; font-size: 16px; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; }
+.team-name span { color: var(--dim); font-size: 14px; }
+.team-name .vs { margin-left: 18px; }
+.team-name b { font-weight: 600; }
+.drop.locked { opacity: .55; border-color: #2a3a5c; }
+#sec-color .chips { margin-bottom: 0; }
+#color-warn { margin: -6px 0 18px; }
 .team-name i { width: 20px; height: 20px; border-radius: 50%; border: 1px solid rgba(255,255,255,.4); }
 .seg { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .seg.col { grid-template-columns: 1fr; }
