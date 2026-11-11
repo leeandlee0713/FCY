@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FCY Tactical Board — 축구 영상 포메이션·움직임 분석</title>
+<meta name="description" content="1분 이내 축구 경기 영상을 올리고 유니폼 색으로 팀을 지정하면 평균 포메이션과 움직임 패턴을 전술 보드로 보여줍니다.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <p class="eyebrow">TACTICAL BOARD</p>
+    <h1>축구 영상 포메이션 · 움직임 분석</h1>
+    <p class="lead">1분 이내 경기 영상을 올리고 유니폼 색으로 팀을 지정하면, 영상 속 실제 선수 위치를 추적해 평균 포메이션과 반복되는 움직임 패턴을 전술 보드로 보여줍니다. 영상은 서버로 전송되지 않고 브라우저 안에서만 분석됩니다.</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- 1. 업로드 -->
+  <section class="card" id="sec-upload">
+    <h2><span class="step">1</span>경기 영상 업로드</h2>
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept="video/*" hidden>
+      <strong>영상 파일을 끌어다 놓거나 눌러서 선택</strong>
+      <span>1분 이내 · MP4 / WebM / MOV · 경기장이 넓게 보이는 화면일수록 정확합니다</span>
+    </label>
+    <div class="row">
+      <button class="btn ghost" id="btn-sample" type="button">샘플 영상으로 체험하기</button>
+      <span class="muted" id="file-info"></span>
+    </div>
+    <p class="error" id="upload-error" hidden></p>
+  </section>
+
+  <!-- 2. 설정 -->
+  <section class="card" id="sec-setup" hidden>
+    <h2><span class="step">2</span>분석 대상 팀 지정</h2>
+    <div class="setup">
+      <div class="preview">
+        <div class="canvas-box"><canvas id="preview"></canvas></div>
+        <div class="row">
+          <input type="range" id="scrub" min="0" max="1000" value="100" aria-label="미리보기 시점">
+          <span class="muted mono" id="scrub-t">0.0s</span>
+        </div>
+        <p class="muted" id="detect-info"></p>
+        <p class="legend-line"><i class="sw home"></i>분석 대상 팀 <i class="sw away"></i>상대 팀 <i class="sw ball"></i>공 후보 <i class="sw quad"></i>경기장 영역(모서리를 끌어서 조정)</p>
+      </div>
+      <div class="controls">
+        <div class="field">
+          <h3>분석 대상 팀 유니폼 색</h3>
+          <div class="chips" id="chips-a"></div>
+          <button class="btn small" id="pick-a" type="button">영상에서 유니폼 색 직접 찍기</button>
+          <p class="team-name" id="team-name"></p>
+          <p class="error" id="color-warn" hidden></p>
+        </div>
+        <div class="field">
+          <h3>상대 팀 유니폼 색</h3>
+          <div class="chips" id="chips-b"></div>
+          <button class="btn small" id="pick-b" type="button">영상에서 직접 찍기</button>
+        </div>
+        <div class="field">
+          <h3>분석 대상 팀의 공격 방향 <small>(영상 화면 기준)</small></h3>
+          <div class="seg" id="seg-attack">
+            <button type="button" data-v="right">→ 오른쪽</button>
+            <button type="button" data-v="left">← 왼쪽</button>
+            <button type="button" data-v="up">↑ 위쪽</button>
+            <button type="button" data-v="down">↓ 아래쪽</button>
+          </div>
+        </div>
+        <div class="field">
+          <h3>카메라 종류</h3>
+          <div class="seg col" id="seg-mode">
+            <button type="button" data-v="partial"><b>중계 화면</b><span>경기장 일부만 보이고 카메라가 움직임</span></button>
+            <button type="button" data-v="full"><b>고정 전체 화면</b><span>경기장 전체가 한 화면에 보임</span></button>
+          </div>
+          <p class="muted" id="mode-hint"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. 분석 -->
+  <section class="card" id="sec-run" hidden>
+    <h2><span class="step">3</span>분석 실행</h2>
+    <div class="actions">
+      <button class="btn primary" id="btn-formation" type="button">평균 포메이션 배치 분석</button>
+      <button class="btn primary alt" id="btn-movement" type="button">움직임 변화</button>
+    </div>
+    <div class="progress" id="progress" hidden>
+      <div class="bar"><i id="bar"></i></div>
+      <span class="muted" id="progress-text"></span>
+    </div>
+    <p class="error" id="run-error" hidden></p>
+  </section>
+
+  <!-- 결과: 포메이션 -->
+  <section class="card" id="sec-formation" hidden>
+    <h2>평균 포메이션 배치</h2>
+    <div class="result">
+      <figure class="board"><img id="formation-img" alt="분석 대상 팀의 평균 포메이션 전술 보드"></figure>
+      <div class="side">
+        <div class="stats" id="formation-stats"></div>
+        <p class="muted" id="formation-note"></p>
+        <a class="btn" id="formation-dl" download="formation.png">사진(PNG) 저장</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- 결과: 움직임 -->
+  <section class="card" id="sec-movement" hidden>
+    <h2>움직임 변화 — 반복 패턴</h2>
+    <p class="muted" id="movement-note"></p>
+    <div class="anims">
+      <div class="anim">
+        <h3>공 위치에 따른 포메이션 · 움직임 변화</h3>
+        <figure class="board"><canvas id="anim-ball"></canvas></figure>
+        <button class="btn small" type="button" data-toggle="ball">일시정지</button>
+        <div class="patterns" id="pat-ball"></div>
+      </div>
+      <div class="anim">
+        <h3>상대 선수 움직임에 따른 포메이션 · 움직임 변화</h3>
+        <figure class="board"><canvas id="anim-opp"></canvas></figure>
+        <button class="btn small" type="button" data-toggle="opp">일시정지</button>
+        <div class="patterns" id="pat-opp"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap foot">
+  <p>색 기반 영상 인식으로 선수·공을 추적합니다. 화질, 카메라 각도, 유니폼과 잔디·라인 색의 유사도에 따라 정확도가 달라질 수 있으니 2단계 미리보기에서 검출 상태를 확인하세요.</p>
+</footer>
+
+<video id="video" muted playsinline preload="auto" hidden></video>
+<script src="js/vision.js"></script>
+<script src="js/analysis.js"></script>
+<script src="js/board.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
