@@ -3,7 +3,7 @@
   'use strict';
   const { vision, analysis, board } = window.FCY;
   const $ = id => document.getElementById(id);
-  const PROC_W = 640, FPS = 5, MAX_SEC = 60;
+  const PROC_MAX = 1280, FPS = 5, MAX_SEC = 60;
 
   const PRESETS = [
     ['빨간색', 224, 37, 37], ['주황색', 245, 124, 31], ['노란색', 245, 212, 0], ['초록색', 31, 168, 74],
@@ -18,7 +18,7 @@
 
   const S = {
     url: null, duration: 0, want: null, wantName: '', specA: null, specB: null, clusters: null,
-    attack: 'right', mode: 'partial', quad: null, grassHue: 120, samples: [],
+    attack: 'right', mode: 'partial', quad: null, grassHue: 120, grassTol: 26, samples: [],
     previewImg: null, det: null, detKey: '', busy: false, anims: {},
   };
 
@@ -91,13 +91,16 @@
       $('file-info').textContent = '';
       return showError('upload-error', '이 영상은 원하는 시점으로 이동할 수 없어 분석할 수 없습니다. MP4 로 다시 저장해 올려 주세요.');
     }
+    // 멀리서 찍은 화면은 선수가 몇 픽셀뿐이라 가능한 한 원본 해상도로 본다
+    const PROC_W = Math.max(640, Math.min(PROC_MAX, video.videoWidth));
     proc.width = PROC_W; proc.height = Math.round((PROC_W * video.videoHeight) / video.videoWidth);
     preview.width = 960; preview.height = Math.round((960 * video.videoHeight) / video.videoWidth);
     $('file-info').textContent = `${name} · ${dur.toFixed(1)}초 · ${video.videoWidth}×${video.videoHeight}`;
 
     S.samples = [];
     for (let i = 0; i < 8; i++) { await seek(((i + 0.5) / 8) * dur); S.samples.push(grab()); }
-    S.grassHue = vision.estimateGrassHue(S.samples);
+    const g = vision.estimateGrass(S.samples);
+    S.grassHue = g.hue; S.grassTol = g.tol;
     $('sec-setup').hidden = false; $('sec-run').hidden = false;
     resetQuad();
     S.clusters = null;
@@ -120,7 +123,7 @@
       for (let x = 0; x < W; x += 2) {
         const p = (y * W + x) * 4;
         const [h, s, v] = vision.rgb2hsv(d[p], d[p + 1], d[p + 2]);
-        if (s >= 0.15 && v >= 0.1 && vision.hueDiff(h, S.grassHue) <= vision.GRASS_TOL) xs.push(x);
+        if (s >= 0.15 && v >= 0.1 && vision.hueDiff(h, S.grassHue) <= S.grassTol) xs.push(x);
       }
       rows.push(xs.length > W * 0.1 ? [xs[Math.floor(xs.length * 0.02)], xs[Math.floor(xs.length * 0.98)]] : null);
     }
@@ -141,7 +144,7 @@
   function detectCfg(collect) {
     const W = proc.width, H = proc.height;
     return {
-      grassHue: S.grassHue, specA: collect ? null : S.specA, specB: collect ? null : S.specB,
+      grassHue: S.grassHue, grassTol: S.grassTol, specA: collect ? null : S.specA, specB: collect ? null : S.specB,
       mask: S.mode === 'full' ? vision.quadMask(S.quad, W, H, 0.04) : null,
       collectOther: !!collect, whiteAsBody: !!collect,
     };
@@ -157,7 +160,7 @@
     if (!S.clusters) {
       const cfg = detectCfg(true), bins = [];
       for (const img of S.samples) bins.push(...vision.detect(img, cfg).otherBins);
-      S.clusters = vision.clusterKits(bins, S.grassHue);
+      S.clusters = vision.clusterKits(bins, S.grassHue, S.grassTol);
     }
     const { a, b } = vision.assignTeams(S.want, S.clusters);
     const sw = sp => `<i style="background:${css(sp)}"></i>`;
@@ -167,13 +170,13 @@
       el.innerHTML = `<span>영상에서 ${S.wantName} 유니폼 팀을 찾지 못했습니다.</span>`;
       showError('color-warn', found
         ? `영상에서 찾은 유니폼 색: ${found}. 1단계에서 색을 다시 선택해 주세요.`
-        : '영상에서 선수를 찾지 못했습니다. 경기장과 선수가 잘 보이는 영상인지 확인해 주세요.');
+        : '영상에서 선수를 찾지 못했습니다. 선수가 화면에서 너무 작게 보이면(키가 화면 높이의 약 2% 미만) 유니폼 색을 읽기 어렵습니다.');
       return;
     }
     S.specA = a.spec; S.specB = b ? b.spec : null;
     el.innerHTML = `<span>분석 팀</span>${sw(a.spec)}<b>${colorName(a.spec)} 유니폼</b>` +
       (b ? `<span class="vs">상대 팀</span>${sw(b.spec)}<b>${colorName(b.spec)} 유니폼</b>` : '<span class="vs">상대 팀을 찾지 못했습니다</span>');
-    const clash = a.spec.kind === 'chroma' && vision.hueDiff(a.spec.h, S.grassHue) <= vision.GRASS_TOL + 12;
+    const clash = a.spec.kind === 'chroma' && vision.hueDiff(a.spec.h, S.grassHue) <= S.grassTol + 8;
     showError('color-warn', clash ? '유니폼 색이 잔디 색과 비슷해 선수를 구분하기 어려울 수 있습니다.' : '');
   }
 
@@ -205,7 +208,8 @@
       info = `현재 화면 검출 — 분석 대상 팀 ${r.A.length}명 · 상대 팀 ${r.B.length}명 · 공 후보 ${r.balls.length}개`;
     }
     $('detect-info').textContent = info;
-    // 경기장 영역
+    // 경기장 영역 (고정 전체 화면 모드에서만 사용)
+    if (S.mode !== 'full') return;
     const q = S.quad;
     vctx.strokeStyle = '#62d6a8'; vctx.lineWidth = 2.5; vctx.setLineDash([10, 7]);
     vctx.beginPath();
@@ -224,6 +228,7 @@
   let drag = -1;
   preview.addEventListener('pointerdown', e => {
     const p = pointerPos(e);
+    if (S.mode !== 'full') return;
     const r = preview.getBoundingClientRect();
     let best = 30 / r.width;
     S.quad.forEach((q, i) => { const d = Math.hypot(q.x - p.x, (q.y - p.y) * (r.height / r.width)); if (d < best) { best = d; drag = i; } });
@@ -272,7 +277,7 @@
     return mark;
   }
   const HINT = {
-    partial: '화면에 보이는 선수들의 상대적 배치로 포메이션을 계산하고, 카메라 이동은 자동으로 보정합니다. 실제 거리를 알 수 없어 팀 크기는 표준 값으로 맞춥니다. 초록 사각형을 잔디 위의 직사각형 영역(가까운 쪽이 넓은 사다리꼴)에 맞추면 원근이 보정됩니다.',
+    partial: '화면에 경기장이 일부만 보여도, 선수 키(약 1.8m)와 경기장 규격(105×68m)의 비율로 실제 거리를 환산해 전체 경기장 위에 배치합니다. 카메라 이동은 자동으로 보정합니다.',
     full: '초록 사각형의 네 모서리를 경기장의 네 코너에 맞춰 주세요. 실제 경기장 좌표(105×68m)로 변환해 위치를 계산합니다.',
   };
   const markMode = seg('seg-mode', 'mode', () => { $('mode-hint').textContent = HINT[S.mode]; resetQuad(); S.clusters = null; autoTeams(); drawPreview(); });
@@ -298,7 +303,7 @@
     if (!f.type.startsWith('video/')) return showError('upload-error', '영상 파일만 올릴 수 있습니다.');
     loadVideo(f, f.name);
   };
-  $('file').addEventListener('change', e => accept(e.target.files[0]));
+  $('file').addEventListener('change', e => { accept(e.target.files[0]); e.target.value = ''; }); // 같은 파일을 다시 골라도 반응하도록 비운다
   ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
   ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
   drop.addEventListener('drop', e => accept(e.dataTransfer.files[0]));
@@ -338,14 +343,14 @@
       await seek((i + 0.5) / FPS);
       const img = grab();
       const r = vision.detect(img, cfg);
-      frames.push({ A: r.A, B: r.B, balls: r.balls });
+      frames.push({ A: r.A, B: r.B, balls: r.balls, top: r.pitchTop, bottom: r.pitchBottom, left: r.pitchLeft, right: r.pitchRight });
       const g = vision.toGray(img, 160, 90);
       if (prevG) { const s = vision.estimateShift(prevG, g, 160, 90); cx += s.x; cy += s.y; }
       pan.push({ x: cx, y: cy });
       prevG = g;
       if (i % 3 === 0) progress((i + 1) / N, `영상 프레임 분석 중 ${i + 1} / ${N}`);
     }
-    S.det = { fps: FPS, frames, pan }; S.detKey = key; window.__lastDet = S.det;
+    S.det = { fps: FPS, frames, pan, W: proc.width, H: proc.height }; S.detKey = key; window.__lastDet = S.det;
     return S.det;
   }
 
@@ -382,7 +387,7 @@
   function quality(res) {
     const s = res.stats, notes = [];
     if (s.K < 10) notes.push(`화면에 꾸준히 잡힌 필드 플레이어 ${s.K}명 기준으로 계산했습니다.`);
-    if (!res.full) notes.push('중계 화면 모드에서는 실제 거리를 알 수 없어, 선수 간 상대적 배치를 표준 팀 크기로 맞춰 표시합니다.');
+    if (!res.full && res.scale) notes.push(res.scale.note);
     if (res.form.gkEstimated) notes.push('골키퍼는 유니폼 색이 달라 검출되지 않으므로 기본 위치에 점선 테두리로 표시했습니다.');
     return notes.join(' ');
   }

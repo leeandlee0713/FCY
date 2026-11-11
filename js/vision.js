@@ -41,22 +41,31 @@
 
   const GRASS_TOL = 26;
 
-  /** 여러 프레임의 색상 히스토그램에서 잔디 색상(최빈 hue) 추정 */
-  function estimateGrassHue(images) {
+  /**
+   * 여러 프레임의 색상 히스토그램에서 잔디 색 범위를 추정한다. { hue: 중심 색상각, tol: 허용 폭 }
+   * 잔디는 밝은 줄과 어두운 줄의 색상이 꽤 다르므로, 최빈 색상 주변으로 이어진 구간 전체를 잔디로 본다.
+   */
+  function estimateGrass(images) {
     const hist = new Float64Array(72);
+    let total = 0, green = 0;
     for (const img of images) {
       const d = img.data;
       for (let i = 0; i < d.length; i += 16) {
         const [h, s, v] = rgb2hsv(d[i], d[i + 1], d[i + 2]);
-        if (s > 0.25 && v > 0.15) hist[Math.min(71, (h / 5) | 0)]++;
+        if (s > 0.2 && v > 0.12) { const b = Math.min(71, (h / 5) | 0); hist[b]++; total++; if (h >= 55 && h < 175) green++; }
       }
     }
-    let best = 0, bi = 24;
-    for (let i = 0; i < 72; i++) {
-      const sum = hist[(i + 71) % 72] + hist[i] + hist[(i + 1) % 72];
-      if (sum > best) { best = sum; bi = i; }
-    }
-    return bi * 5 + 2.5;
+    // 초록 계열이 화면에 충분히 있으면 그 안에서만 찾는다 (노란 광고판 등에 끌려가지 않도록)
+    const lo0 = green > total * 0.2 ? 11 : 0, hi0 = green > total * 0.2 ? 34 : 71;
+    let bi = lo0;
+    for (let i = lo0; i <= hi0; i++) if (hist[i] > hist[bi]) bi = i;
+    const thr = hist[bi] * 0.06;
+    let lo = bi, hi = bi;
+    while (lo > bi - 9 && hist[(lo + 71) % 72] >= thr) lo--;
+    while (hi < bi + 9 && hist[(hi + 1) % 72] >= thr) hi++;
+    const hue = (((lo + hi + 1) / 2) * 5 + 360) % 360;
+    const tol = Math.max(16, Math.min(45, ((hi - lo + 1) / 2) * 5 + 6));
+    return { hue, tol };
   }
 
   /** 사각형(정규화 좌표 4점) 내부 마스크 */
@@ -90,7 +99,7 @@
 
   /**
    * 한 프레임에서 선수(A/B/기타)와 공 후보를 찾는다.
-   * cfg: { grassHue, specA, specB|null, mask|null, collectOther }
+   * cfg: { grassHue, grassTol, specA, specB|null, mask|null, collectOther }
    */
   function detect(img, cfg) {
     const d = img.data, W = img.width, H = img.height, N = W * H;
@@ -99,6 +108,7 @@
     const grass = new Uint8Array(N);
     const white = new Uint8Array(N);
     const { specA, specB, grassHue } = cfg;
+    const gTol = cfg.grassTol || GRASS_TOL;
 
     for (let i = 0, p = 0; i < N; i++, p += 4) {
       const r = d[p], g = d[p + 1], b = d[p + 2];
@@ -114,7 +124,7 @@
         if (h < 0) h += 360;
       }
       const s = mx === 0 ? 0 : df / mx, v = mx / 255;
-      if (s >= 0.15 && v >= 0.1 && hueDiff(h, grassHue) <= GRASS_TOL) { grass[i] = 1; continue; }
+      if (s >= 0.15 && v >= 0.1 && hueDiff(h, grassHue) <= gTol) { grass[i] = 1; continue; }
       const a = specA && matchSpec(h, s, v, specA);
       const bb = !a && specB && matchSpec(h, s, v, specB);
       if (a) cls[i] = 1; else if (bb) cls[i] = 2;
@@ -123,40 +133,68 @@
       kind[i] = !a && !bb && wh && !cfg.whiteAsBody ? 2 : 1;
     }
 
-    // 경기장 영역: 열마다 위/아래에서 잔디가 시작되는 지점
-    const win = Math.max(6, Math.round(H * 0.04));
-    const top = new Int32Array(W), bot = new Int32Array(W);
-    for (let x = 0; x < W; x++) {
-      let cnt = 0, t = H, bt = -1;
-      for (let y = 0; y < H; y++) {
-        cnt += grass[y * W + x];
-        if (y >= win) cnt -= grass[(y - win) * W + x];
-        if (y >= win - 1 && cnt >= win * 0.75) { t = y - win + 1; break; }
+    // 경기장 영역 = 가장 큰 "연결된 잔디 덩어리". 관중석·광고판 속 초록색은 필드와 이어져 있지 않으므로 빠진다.
+    const G = 8, gw = Math.ceil(W / G), gh = Math.ceil(H / G);
+    const gcell = new Uint8Array(gw * gh);
+    for (let gy = 0; gy < gh; gy++) {
+      for (let gx = 0; gx < gw; gx++) {
+        let c = 0, n = 0;
+        for (let y = gy * G; y < Math.min(H, gy * G + G); y++) {
+          for (let x = gx * G; x < Math.min(W, gx * G + G); x++) { c += grass[y * W + x]; n++; }
+        }
+        if (c >= n * 0.5) gcell[gy * gw + gx] = 1;
       }
-      cnt = 0;
-      for (let y = H - 1; y >= 0; y--) {
-        cnt += grass[y * W + x];
-        if (y + win < H) cnt -= grass[(y + win) * W + x];
-        if (y <= H - win && cnt >= win * 0.75) { bt = y + win - 1; break; }
-      }
-      top[x] = t; bot[x] = bt;
     }
-    const rad = Math.max(2, Math.round(W * 0.03));
-    const top2 = new Int32Array(W), bot2 = new Int32Array(W);
-    for (let x = 0; x < W; x++) {
-      let t = H, b = -1;
-      for (let k = Math.max(0, x - rad); k <= Math.min(W - 1, x + rad); k++) {
-        if (top[k] < t) t = top[k];
-        if (bot[k] > b) b = bot[k];
+    const glab = new Int32Array(gw * gh), gst = new Int32Array(gw * gh);
+    let bestId = 0, bestN = 0, nid = 0;
+    for (let i0 = 0; i0 < gw * gh; i0++) {
+      if (!gcell[i0] || glab[i0]) continue;
+      let sp = 0, n = 0;
+      nid++; gst[sp++] = i0; glab[i0] = nid;
+      while (sp) {
+        const i = gst[--sp], x = i % gw, y = (i / gw) | 0;
+        n++;
+        if (x > 0 && gcell[i - 1] && !glab[i - 1]) { glab[i - 1] = nid; gst[sp++] = i - 1; }
+        if (x < gw - 1 && gcell[i + 1] && !glab[i + 1]) { glab[i + 1] = nid; gst[sp++] = i + 1; }
+        if (y > 0 && gcell[i - gw] && !glab[i - gw]) { glab[i - gw] = nid; gst[sp++] = i - gw; }
+        if (y < gh - 1 && gcell[i + gw] && !glab[i + gw]) { glab[i + gw] = nid; gst[sp++] = i + gw; }
       }
-      top2[x] = t; bot2[x] = b;
+      if (n > bestN) { bestN = n; bestId = nid; }
     }
+    // 선수·라인 때문에 생긴 구멍 메우기: 같은 행과 같은 열에서 모두 필드 범위 안이면 필드
+    const rowMin = new Int32Array(gh).fill(gw), rowMax = new Int32Array(gh).fill(-1);
+    const colMin = new Int32Array(gw).fill(gh), colMax = new Int32Array(gw).fill(-1);
+    for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+      if (glab[gy * gw + gx] !== bestId || !bestId) continue;
+      if (gx < rowMin[gy]) rowMin[gy] = gx; if (gx > rowMax[gy]) rowMax[gy] = gx;
+      if (gy < colMin[gx]) colMin[gx] = gy; if (gy > colMax[gx]) colMax[gx] = gy;
+    }
+    const pitch = new Uint8Array(gw * gh);
+    for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+      if (gx >= rowMin[gy] && gx <= rowMax[gy] && gy >= colMin[gx] && gy <= colMax[gx]) pitch[gy * gw + gx] = 1;
+    }
+    const onPitch = (x, y) => pitch[((y / G) | 0) * gw + ((x / G) | 0)] === 1;
+    // 화면 가운데 열들에서 본 필드의 위·아래 끝 (경기장 크기 환산에 사용)
+    const tops = [], bots = [];
+    for (let gx = Math.floor(gw * 0.2); gx < Math.ceil(gw * 0.8); gx++) if (colMax[gx] >= 0) { tops.push(colMin[gx]); bots.push(colMax[gx] + 1); }
+    tops.sort((a, b) => a - b); bots.sort((a, b) => a - b);
+    const pitchTop = tops.length ? Math.min(1, (tops[tops.length >> 1] * G) / H) : 0;
+    const pitchBottom = bots.length ? Math.min(1, (bots[bots.length >> 1] * G) / H) : 1;
+    // 필드 가운데 높이에서 본 좌·우 끝
+    const gm = Math.min(gh - 1, Math.round(((pitchTop + pitchBottom) / 2) * H / G));
+    const pitchLeft = rowMax[gm] >= 0 ? (rowMin[gm] * G) / W : 0;
+    const pitchRight = rowMax[gm] >= 0 ? Math.min(1, ((rowMax[gm] + 1) * G) / W) : 1;
+
     const mask = cfg.mask;
-    for (let x = 0; x < W; x++) {
-      const t = top2[x], b = bot2[x];
-      for (let y = 0; y < H; y++) {
+    for (let y = 0; y < H; y++) {
+      const gy = (y / G) | 0;
+      for (let x = 0; x < W; x++) {
         const i = y * W + x;
-        if (y < t || y > b || (mask && !mask[i])) kind[i] = 0;
+        if (!kind[i]) continue;
+        const gi = gy * gw + ((x / G) | 0);
+        // 먼 쪽 터치라인 근처 선수의 상체는 필드 경계 위로 조금 나올 수 있어 두 칸까지 허용
+        const ok = pitch[gi] || (gy + 1 < gh && pitch[gi + gw]) || (gy + 2 < gh && pitch[gi + 2 * gw]);
+        if (!ok || (mask && !mask[i])) kind[i] = 0;
       }
     }
 
@@ -205,7 +243,7 @@
       comps.push({ id, k, area, nA, nB, minx, maxx, miny, maxy, ids: [id] });
     }
 
-    const maxH = H * 0.4, maxW = W * 0.25, minH = Math.max(5, H * 0.018);
+    const maxH = H * 0.4, maxW = W * 0.25, minH = Math.max(5, H * 0.012);
     const maxBall = Math.max(4, H * 0.035);
     let bodies = comps.filter(c => c.k === 1 && c.area >= 4 &&
       c.maxy - c.miny + 1 <= maxH && c.maxx - c.minx + 1 <= maxW);
@@ -235,13 +273,27 @@
       }
     }
 
-    const out = { A: [], B: [], other: [], balls: [], W, H };
+    const out = { A: [], B: [], other: [], balls: [], W, H, pitchTop, pitchBottom, pitchLeft, pitchRight };
     const players = [];
     const small = [];
     for (const c of bodies) {
       const w = c.maxx - c.minx + 1, h = c.maxy - c.miny + 1;
       const asp = h / w;
-      if (h >= minH && asp >= 0.7 && asp <= 6 && c.area >= w * h * 0.2 && c.area >= 8) {
+      // 선수의 발은 필드 안쪽에 있어야 한다 (필드 가장자리 밖의 관계자·관중 제외)
+      const fgx = Math.min(gw - 1, (((c.minx + c.maxx) / 2) / G) | 0), fgy = Math.min(gh - 1, (c.maxy / G) | 0);
+      // 발밑과 발 양옆이 잔디여야 한다 (필드 경계에 걸린 배경 조각 제외). 라인을 밟고 있을 수 있어 몇 픽셀 더 본다
+      const probe = (x0, y0, dx, dy) => {
+        for (let k = 2; k <= 5; k++) {
+          const x = Math.round(x0 + dx * k), y = y0 + dy * k;
+          if (x < 0 || x >= W || y >= H) return true;
+          if (grass[y * W + x]) return true;
+        }
+        return false;
+      };
+      const fcx = (c.minx + c.maxx) / 2;
+      const footOK = pitch[fgy * gw + fgx] && (fgy + 1 >= gh || pitch[(fgy + 1) * gw + fgx]) &&
+        probe(fcx, c.maxy, 0, 1) && probe(c.minx, c.maxy, -1, 0) && probe(c.maxx, c.maxy, 1, 0);
+      if (footOK && h >= minH && asp >= 0.7 && asp <= 6 && c.area >= w * h * 0.2 && c.area >= 8) {
         const o = { x: (c.minx + c.maxx + 1) / 2 / W, y: (c.maxy + 1) / H, w: w / W, h: h / H, c };
         if (c.nA >= c.area * 0.12 && c.nA >= c.nB * 1.3) out.A.push(o);
         else if (c.nB >= c.area * 0.12 && c.nB > c.nA) out.B.push(o);
@@ -262,6 +314,17 @@
         if (cx >= p.minx - 1 && cx <= p.maxx + 1 && cy >= p.miny - 1 && cy <= p.maxy + 1) { inPlayer = true; break; }
       }
       if (inPlayer) continue;
+      // 공은 잔디 위에 있다: 후보가 필드 안에 있고, 둘레가 대부분 잔디여야 한다
+      if (!onPitch(Math.min(W - 1, cx | 0), Math.min(H - 1, c.maxy))) continue;
+      let ring = 0, ringG = 0;
+      for (let y = c.miny - 3; y <= c.maxy + 3; y++) {
+        for (let x = c.minx - 3; x <= c.maxx + 3; x++) {
+          if (x < 0 || y < 0 || x >= W || y >= H) continue;
+          if (x >= c.minx - 1 && x <= c.maxx + 1 && y >= c.miny - 1 && y <= c.maxy + 1) continue;
+          ring++; ringG += grass[y * W + x];
+        }
+      }
+      if (ringG < ring * 0.55) continue;
       out.balls.push({ x: cx / W, y: (c.maxy + 1) / H, r: Math.max(w, h) / 2 / W, white: c.k === 2 });
     }
     out.balls.sort((a, b) => (b.white - a.white) || (b.r - a.r));
@@ -296,7 +359,8 @@
   }
 
   /** 선수 덩어리들의 주된 색을 모아 유니폼 색 후보(득표순)를 만든다 */
-  function clusterKits(binsList, grassHue) {
+  function clusterKits(binsList, grassHue, grassTol) {
+    const gt = Math.max(32, (grassTol || GRASS_TOL) + 6);
     const votes = new Float64Array(BIN_COUNT), sums = new Float64Array(BIN_COUNT * 4);
     for (const bins of binsList) {
       let total = 0;
@@ -306,11 +370,11 @@
       // 유채색: 저해상도에서는 유니폼 가장자리가 잔디색과 섞여 색상이 잔디 쪽으로 밀린다.
       // 그래서 충분히 많은 색 중 잔디에서 가장 먼 색상을 유니폼 색으로 본다.
       let cmax = 0;
-      for (let b = 0; b < 12; b++) if (hueDiff(b * 30, grassHue) >= 32 && wv(b) > cmax) cmax = wv(b);
+      for (let b = 0; b < 12; b++) if (hueDiff(b * 30, grassHue) >= gt && wv(b) > cmax) cmax = wv(b);
       let best = -1, far = -1;
       for (let b = 0; b < 12; b++) {
         const hd = hueDiff(b * 30, grassHue);
-        if (hd < 32 || !wv(b) || wv(b) < cmax * 0.5) continue;
+        if (hd < gt || !wv(b) || wv(b) < cmax * 0.35) continue;
         if (hd > far) { far = hd; best = b; }
       }
       let bc = best >= 0 ? cmax : 0;
@@ -417,5 +481,5 @@
     return { x: bx / gw, y: by / gh };
   }
 
-  FCY.vision = { rgb2hsv, hueDiff, makeSpec, matchSpec, estimateGrassHue, quadMask, detect, clusterKits, assignTeams, hueName, toGray, estimateShift, GRASS_TOL };
+  FCY.vision = { rgb2hsv, hueDiff, makeSpec, matchSpec, estimateGrass, quadMask, detect, clusterKits, assignTeams, hueName, toGray, estimateShift, GRASS_TOL };
 })();

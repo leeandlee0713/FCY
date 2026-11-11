@@ -572,36 +572,147 @@
     return res;
   }
 
+  // ---------- 화면이 잘린 영상의 실제 거리 환산 ----------
+  // 기준 규격: 경기장 105 x 68 m, 센터서클 반지름 9.15 m, 선수 키 약 1.8 m.
+  // 참고 중계 화면 3장에서 센터서클의 세로/가로 픽셀 비(= 깊이 방향 압축률)를 재면 0.27, 0.40, 0.47 이고,
+  // 같은 위치에서 선수의 화면 높이는 가로 1m 픽셀 수의 약 1.85배였다.
+  const PLAYER_M = 1.85;       // 선수 화면 높이 ÷ 그 위치의 가로 1m 픽셀 수
+  const DEPTH_RATIO = 0.32;    // 깊이 방향 압축률 기본값 (잘려서 직접 잴 수 없을 때)
+  const MARGIN = 2.5;          // 라인 밖 잔디 여유 폭(m)
+
+  const END_MARGIN = 4;        // 골라인 뒤 잔디 여유(m)
+
+  /** 선수의 화면 높이 h(y) = a + b·y (픽셀). 화면 아래쪽(가까운 쪽)일수록 커진다 */
+  function heightFit(det, pan) {
+    const W = det.W, Hh = det.H;
+    let pts = [];
+    det.frames.forEach((f, i) => {
+      for (const p of f.A.concat(f.B)) {
+        const hp = p.h * Hh, wp = p.w * W;
+        if (hp >= wp * 1.2 && hp <= wp * 4.5) pts.push([(p.y - pan[i].y) * Hh, hp]);
+      }
+    });
+    if (pts.length < 12) return null;
+    const fit = P => {
+      let sx = 0, sy = 0, sxx = 0, sxy = 0;
+      for (const [x, y] of P) { sx += x; sy += y; sxx += x * x; sxy += x * y; }
+      const n = P.length, d = n * sxx - sx * sx;
+      const b = Math.abs(d) < 1e-6 ? 0 : (n * sxy - sx * sy) / d;
+      return [(sy - b * sx) / n, b];
+    };
+    // 상의만 잡힌 검출처럼 작게 나온 값이 많으므로, 화면 높이 구간별 상위(70%) 값으로 먼저 맞춘다
+    const ys = pts.map(p => p[0]), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const env = [];
+    for (let k = 0; k < 8; k++) {
+      const lo = y0 + ((y1 - y0) * k) / 8, hi = y0 + ((y1 - y0) * (k + 1)) / 8;
+      const hs = pts.filter(p => p[0] >= lo && (p[0] < hi || k === 7)).map(p => p[1]);
+      if (hs.length >= 3) env.push([(lo + hi) / 2, quantile(hs, 0.7)]);
+    }
+    let [a, b] = fit(env.length >= 3 ? env : pts);
+    for (let k = 0; k < 2; k++) {
+      const keep = pts.filter(([y, h]) => { const e = Math.max(4, a + b * y); return h >= e * 0.78 && h <= e * 1.3; });
+      if (keep.length < 12) break;
+      pts = keep; [a, b] = fit(pts);
+    }
+    const hMed = median(pts.map(p => p[1]));
+    if (!(b > 1e-4) || pts.length < 30) { a = hMed; b = 0; }
+    return { a, b, hMed, at: y => Math.max(hMed * 0.4, a + b * y) };
+  }
+
+  /** 선수 크기와 맞지 않는 검출(골대 그물, 겹친 덩어리, 잡티)을 뺀다 */
+  function dropOddSizes(det, pan, hf) {
+    if (!hf) return;
+    det.frames.forEach((f, i) => {
+      for (const k of ['A', 'B']) {
+        f[k] = f[k].filter(p => {
+          const ratio = (p.h * det.H) / hf.at((p.y - pan[i].y) * det.H);
+          return ratio >= 0.3 && ratio <= 1.7;
+        });
+      }
+    });
+  }
+
+  function metricScale(det, pan, attack, hf) {
+    const W = det.W, Hh = det.H;
+    if (!hf) throw new Error('영상에서 선수를 충분히 찾지 못했습니다. 경기장과 선수가 잘 보이는 영상인지 확인해 주세요.');
+    const med = k => median(det.frames.map(f => f[k]));
+    const side = attack === 'right' || attack === 'left'; // 옆에서 본 화면: 깊이 방향 = 경기장 폭
+    const yTop = median(det.frames.map((f, i) => (f.top - pan[i].y) * Hh)), yBot = median(det.frames.map((f, i) => (f.bottom - pan[i].y) * Hh));
+    const topSeen = med('top') > 0.03, botSeen = med('bottom') < 0.975;
+    const xl = med('left'), xr = med('right');
+    const sidesSeen = xl > 0.015 && xr < 0.985 && xr - xl > 0.4;
+
+    // 1) 좌우 끝이 다 보이면 그 폭이 곧 경기장 길이(또는 폭)이므로, 선수 크기 기준 축척을 여기에 맞춘다
+    let k = 1;
+    const yMid = (yTop + yBot) / 2;
+    if (sidesSeen) {
+      const wide = (side ? PL + 2 * END_MARGIN : PW + 2 * MARGIN);
+      const pxPerM = ((xr - xl) * W) / wide;
+      k = Math.max(0.5, Math.min(2, (pxPerM * PLAYER_M) / hf.at(yMid)));
+    }
+    const hAt = y => hf.at(y) * k;
+    // 깊이(m, 압축률 1 기준): ∫ PLAYER_M / h(y) dy
+    const depth1 = y => (hf.b ? (PLAYER_M / (hf.b * k)) * Math.log(hf.at(y) / hf.hMed) : (PLAYER_M / (hf.hMed * k)) * y);
+
+    // 2) 위아래 끝이 다 보이면 "선수 키 대 경기장 폭" 비율로 깊이 압축률을 직접 구한다
+    const span = (side ? PW : PL) + 2 * (side ? MARGIN : END_MARGIN);
+    const near = side ? MARGIN : END_MARGIN;
+    let r = DEPTH_RATIO, measured = false;
+    if (topSeen && botSeen && yBot > yTop + Hh * 0.2) {
+      const rr = (depth1(yBot) - depth1(yTop)) / span;
+      if (rr > 0.12 && rr < 0.9) { r = rr; measured = true; }
+    }
+    // 3) 보이는 끝을 실제 라인 위치에 맞춘다
+    const anchored = topSeen || botSeen;
+    const d0 = topSeen ? depth1(yTop) / r + near : botSeen ? depth1(yBot) / r - (span - near) : 0;
+    const xc = sidesSeen ? (xl + xr) / 2 : 0.5;
+    const map = (x, y) => {
+      const py = y * Hh, X = ((x - xc) * W * PLAYER_M) / hAt(py), D = depth1(py) / r - d0;
+      switch (attack) {
+        case 'left': return { x: (anchored ? PW : 0) - D, y: (sidesSeen ? PL / 2 : 0) - X };
+        case 'up': return { x: (sidesSeen ? PW / 2 : 0) + X, y: (anchored ? PL : 0) - D };
+        case 'down': return { x: (sidesSeen ? PW / 2 : 0) - X, y: D };
+        default: return { x: D, y: (sidesSeen ? PL / 2 : 0) + X };
+      }
+    };
+    const fixedX = side ? anchored : sidesSeen, fixedY = side ? sidesSeen : anchored;
+    let note = '선수 키(약 1.8m)와 경기장 규격(105×68m)의 비율로 화면 속 거리를 실제 거리로 환산해 전체 경기장 위에 배치했습니다';
+    note += measured ? ' (화면에 보이는 필드 끝으로 원근 보정).' : ' (원근은 참고 중계 화면에서 잰 기본값 사용).';
+    if (!fixedX || !fixedY) {
+      const ax = !fixedX && !fixedY ? '경기장 위 절대 위치' : `경기장 ${!fixedY ? '길이' : '폭'} 방향의 절대 위치`;
+      note += ` 필드가 잘려 보여 ${ax}는 화면만으로 알 수 없으므로 팀 중심을 기본 위치에 두었습니다.`;
+    }
+    return { map, r, measured, note, fixedX, fixedY };
+  }
+
   // ---------- 전체 분석 ----------
   function analyze(det, cfg) {
     const N = det.frames.length, dt = 1 / det.fps, full = cfg.mode === 'full';
     const H = homography(cfg.quad, [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }]);
     const pan = det.frames.map((f, i) => (full ? { x: 0, y: 0 } : det.pan[i]));
-    const map = (p, i) => {
-      const [u, v] = H(p.x - pan[i].x, p.y - pan[i].y);
-      const q = orient(u, v, cfg.attack);
-      return full ? { x: q.x * PW, y: q.y * PL } : q;
-    };
+    const { track: btImg, found } = trackBall(det.frames.map((f, i) => f.balls.map(b => ({ ...b, x: b.x - pan[i].x, y: b.y - pan[i].y }))), dt);
+    const hf = heightFit(det, pan);
+    det = { ...det, frames: det.frames.map(f => ({ ...f })) }; // 원본 검출 결과는 건드리지 않는다
+    dropOddSizes(det, pan, hf);
+    let map, scale = null;
+    if (full) {
+      map = p => { const [u, v] = H(p.x, p.y); const q = orient(u, v, cfg.attack); return { x: q.x * PW, y: q.y * PL }; };
+    } else {
+      scale = metricScale(det, pan, cfg.attack, hf);
+      map = (p, i) => scale.map(p.x - pan[i].x, p.y - pan[i].y);
+    }
     let A = det.frames.map((f, i) => f.A.map(p => map(p, i)));
     let Bp = det.frames.map((f, i) => f.B.map(p => map(p, i)));
-    const { track: btImg, found } = trackBall(det.frames.map((f, i) => f.balls.map(b => ({ ...b, x: b.x - pan[i].x, y: b.y - pan[i].y }))), dt);
     let ball = btImg.map((b, i) => (b ? map({ x: b.x + pan[i].x, y: b.y + pan[i].y }, i) : null));
 
     if (!full) {
-      // 실제 거리를 알 수 없으므로 팀 크기를 표준값으로 정규화한다
-      const sxs = [], sys = [], cs = [];
-      for (const P of A) {
-        if (P.length < 5) continue;
-        const m = meanPt(P);
-        sxs.push(Math.sqrt(P.reduce((a, p) => a + (p.x - m.x) ** 2, 0) / P.length));
-        sys.push(Math.sqrt(P.reduce((a, p) => a + (p.y - m.y) ** 2, 0) / P.length));
-        cs.push(m);
-      }
-      if (sxs.length < 3) throw new Error('지정한 유니폼 색의 선수를 충분히 찾지 못했습니다. 팀 색을 영상에서 직접 찍어 다시 지정해 보세요.');
-      const kx = 11 / Math.max(1e-4, median(sxs)), ky = 9.5 / Math.max(1e-4, median(sys));
+      // 화면만으로는 알 수 없는 축(경기장 길이 방향 등)은 팀 중심을 기본 위치에 둔다
+      const cs = A.filter(P => P.length >= 3).map(meanPt);
+      if (cs.length < 3) throw new Error('영상에서 분석 대상 팀 선수를 충분히 찾지 못했습니다. 1단계에서 유니폼 색을 다시 선택해 주세요.');
       const c0 = meanPt(cs);
-      const nrm = p => ({ x: 34 + (p.x - c0.x) * kx, y: 44 + (p.y - c0.y) * ky });
-      A = A.map(P => P.map(nrm)); Bp = Bp.map(P => P.map(nrm)); ball = ball.map(b => (b ? nrm(b) : null));
+      const off = { x: scale.fixedX ? 0 : 34 - c0.x, y: scale.fixedY ? 0 : 44 - c0.y };
+      const sh = p => ({ x: p.x + off.x, y: p.y + off.y });
+      A = A.map(P => P.map(sh)); Bp = Bp.map(P => P.map(sh)); ball = ball.map(b => (b ? sh(b) : null));
     }
     const gapN = Math.round(1.6 / dt);
     ball = fillSeries(ball, Math.round(2 / dt), null);
@@ -630,7 +741,7 @@
     const S = { N, dt, full, A: rolesA, B: rolesB, ball, form, width, depth };
     const cnt = k => det.frames.reduce((a, f) => a + f[k].length, 0) / N;
     return {
-      full, form,
+      full, form, scale: scale && { r: scale.r, measured: scale.measured, note: scale.note },
       ballP: ballPatterns(S), oppP: oppPatterns(S),
       stats: {
         frames: N, validFrames: rolesA.nValid, avgA: cnt('A'), avgB: cnt('B'),
