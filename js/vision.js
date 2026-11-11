@@ -538,44 +538,17 @@
   }
 
   /**
-   * 스크린샷 한 장에서 유니폼 색 후보를 읽는다.
-   * - 잔디가 보이는 경기 화면이면: 선수 덩어리를 찾아 유니폼 색을 묶는다 (영상과 같은 방식).
-   * - 선수를 찾지 못하거나 유니폼만 확대한 사진이면: 잔디·피부색을 뺀 가장 많은 색을 쓴다.
-   * 반환: { specs: [유니폼 색...], method: 'players' | 'dominant' }
+   * 유니폼 색 후보(득표순)에서 두 팀의 필드 플레이어 색을 고른다.
+   * 가장 많이 보이는 색이 한 팀, 그 색과 뚜렷이 다른 색 중 가장 많이 보이는 색이 다른 팀.
+   * 골키퍼·심판처럼 한두 명만 입은 색(1위의 20% 미만)과 피부색 계열은 뒤로 미룬다.
    */
-  function kitColorsFromImage(img) {
-    const g = estimateGrass([img]);
-    const hasGrass = g.green >= 0.2;
-    if (hasGrass) {
-      const r = detect(img, { grassHue: g.hue, grassTol: g.tol, specA: null, specB: null, collectOther: true, whiteAsBody: true });
-      const cl = clusterKits(r.otherBins, g.hue, g.tol, 2);
-      if (cl.length) {
-        const top = cl[0].votes, specs = [];
-        for (const c of cl) {
-          if (c.votes < Math.max(2, top * 0.3)) continue;
-          if (specs.some(sp => kitDistance(sp, c.spec) < 30)) continue;
-          specs.push(c.spec);
-        }
-        if (specs.length) return { specs: specs.slice(0, 3), method: 'players' };
-      }
-    }
-    const bins = new Float64Array(BIN_COUNT * 4), d = img.data;
-    for (let i = 0; i < d.length; i += 8) {
-      const [h, sa, v] = rgb2hsv(d[i], d[i + 1], d[i + 2]);
-      if (hasGrass && sa >= 0.15 && v >= 0.1 && hueDiff(h, g.hue) <= g.tol + 6) continue;
-      const b = colorBin(h, sa, v) * 4;
-      bins[b]++; bins[b + 1] += d[i]; bins[b + 2] += d[i + 1]; bins[b + 3] += d[i + 2];
-    }
-    const order = [];
-    for (let b = 0; b < BIN_COUNT; b++) order.push([bins[b * 4] * (b === 1 || b === 13 ? 0.45 : 1), b]);
-    order.sort((x, y) => y[0] - x[0]);
-    const specs = [];
-    for (const [w, b] of order.slice(0, 3)) {
-      if (!w || w < order[0][0] * 0.45) continue;
-      const n = bins[b * 4];
-      specs.push(makeSpec(Math.round(bins[b * 4 + 1] / n), Math.round(bins[b * 4 + 2] / n), Math.round(bins[b * 4 + 3] / n)));
-    }
-    return { specs, method: 'dominant' };
+  function teamPair(clusters) {
+    if (!clusters.length) return [];
+    const w = c => c.votes * (c.bin === 1 ? 0.5 : 1);
+    const sorted = clusters.slice().sort((x, y) => w(y) - w(x));
+    const first = sorted[0], floor = Math.max(3, w(first) * 0.2);
+    const second = sorted.find(c => c !== first && w(c) >= floor && kitDistance(first.spec, c.spec) >= 30);
+    return second ? [first, second] : [first];
   }
 
   /** 색상각 → 색 이름 구간 */
@@ -667,5 +640,5 @@
     return { x: bx / gw, y: by / gh };
   }
 
-  FCY.vision = { rgb2hsv, hueDiff, makeSpec, matchSpec, estimateGrass, quadMask, detect, clusterKits, assignTeams, kitColorsFromImage, hueName, toGray, estimateShift, GRASS_TOL };
+  FCY.vision = { rgb2hsv, hueDiff, makeSpec, matchSpec, estimateGrass, quadMask, detect, clusterKits, assignTeams, teamPair, hueName, toGray, estimateShift, GRASS_TOL };
 })();

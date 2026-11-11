@@ -15,36 +15,17 @@
   <div class="wrap">
     <p class="eyebrow">TACTICAL BOARD</p>
     <h1>축구 영상 포메이션 · 움직임 분석</h1>
-    <p class="lead">분석할 팀의 유니폼 색을 고르고 1분 이내 경기 영상을 올리면, 화면 속 유니폼 색을 자동으로 판단해 그 팀 선수들의 위치를 추적하고 평균 포메이션과 반복되는 움직임 패턴을 전술 보드로 보여줍니다. 영상은 서버로 전송되지 않고 브라우저 안에서만 분석됩니다.</p>
+    <p class="lead">1분 이내 경기 영상을 올리면 화면 속 두 팀의 유니폼 색을 자동으로 읽어 제시합니다. 분석할 팀의 색을 고르면 그 팀 선수들의 위치를 추적해 평균 포메이션과 반복되는 움직임 패턴을 전술 보드로 보여줍니다. 영상은 서버로 전송되지 않고 브라우저 안에서만 분석됩니다.</p>
   </div>
 </header>
 
 <main class="wrap">
-  <!-- 1. 팀 색 지정 -->
-  <section class="card" id="sec-color">
-    <h2><span class="step">1</span>분석할 팀의 유니폼 색 선택</h2>
-    <div class="chips" id="chips-a"></div>
-    <div class="shot">
-      <label class="btn small" for="shot-file">경기 영상 스크린샷으로 지정</label>
-      <input type="file" id="shot-file" accept="image/*" hidden>
-      <span class="muted">스크린샷 속 유니폼 색을 읽어 내고, 영상을 올리면 그 색의 팀이 영상에 실제로 있는지 대조합니다.</span>
-    </div>
-    <div class="shot-result" id="shot-result" hidden>
-      <canvas id="shot-thumb"></canvas>
-      <div>
-        <p id="shot-text"></p>
-        <div class="chips" id="shot-chips"></div>
-      </div>
-    </div>
-    <p class="muted">색 이름을 고르거나 스크린샷을 올리면 됩니다. 영상을 올리면 화면 속 선수들의 유니폼 색을 자동으로 읽어, 고른 색에 해당하는 팀을 분석 팀으로, 반대 팀을 상대 팀으로 판단합니다.</p>
-  </section>
-
-  <!-- 2. 업로드 -->
+  <!-- 1. 업로드 -->
   <section class="card" id="sec-upload">
-    <h2><span class="step">2</span>경기 영상 업로드</h2>
-    <label class="drop locked" id="drop">
+    <h2><span class="step">1</span>경기 영상 업로드</h2>
+    <label class="drop" id="drop">
       <input type="file" id="file" accept="video/*" hidden>
-      <strong id="drop-title">먼저 위에서 유니폼 색을 선택해 주세요</strong>
+      <strong>영상 파일을 끌어다 놓거나 눌러서 선택</strong>
       <span>1분 이내 · MP4 / WebM / MOV · 경기장이 넓게 보이는 화면일수록 정확합니다</span>
     </label>
     <div class="row">
@@ -54,9 +35,11 @@
     <p class="error" id="upload-error" hidden></p>
   </section>
 
-  <!-- 3. 자동 판단 확인 -->
+  <!-- 2. 분석 팀 선택 -->
   <section class="card" id="sec-setup" hidden>
-    <h2><span class="step">3</span>자동 판단 결과 확인</h2>
+    <h2><span class="step">2</span>분석할 팀 선택</h2>
+    <p class="muted pick-lead">영상에서 읽어 낸 두 팀의 필드 플레이어 유니폼 색입니다. 분석할 팀의 색을 누르면 나머지 색이 상대 팀이 됩니다.</p>
+    <div class="team-pick" id="team-pick"></div>
     <p class="team-name" id="team-name"></p>
     <p class="error" id="color-warn" hidden></p>
     <div class="setup">
@@ -67,7 +50,7 @@
           <span class="muted mono" id="scrub-t">0.0s</span>
         </div>
         <p class="muted" id="detect-info"></p>
-        <p class="legend-line"><i class="sw home"></i>분석 대상 팀 <i class="sw away"></i>상대 팀 <i class="sw ball"></i>공 후보 <i class="sw mid"></i>인식한 중앙선·센터서클 <i class="sw quad"></i>경기장 영역(고정 전체 화면에서 모서리 조정)</p>
+        <p class="legend-line"><i class="sw home"></i>분석 대상 팀 <i class="sw away"></i>상대 팀 (팀 선택 전에는 각 유니폼 색) <i class="sw ball"></i>공 후보 <i class="sw mid"></i>인식한 중앙선·센터서클 <i class="sw quad"></i>경기장 영역(고정 전체 화면에서 모서리 조정)</p>
       </div>
       <div class="controls">
         <div class="field">
@@ -93,7 +76,7 @@
 
   <!-- 3. 분석 -->
   <section class="card" id="sec-run" hidden>
-    <h2><span class="step">4</span>분석 실행</h2>
+    <h2><span class="step">3</span>분석 실행</h2>
     <div class="actions">
       <button class="btn primary" id="btn-start" type="button">시작 포메이션 구조</button>
       <button class="btn primary" id="btn-formation" type="button">평균 선수 위치</button>
@@ -153,7 +136,7 @@
 </main>
 
 <footer class="wrap foot">
-  <p>색 기반 영상 인식으로 선수·공을 추적합니다. 화질, 카메라 각도, 유니폼과 잔디·라인 색의 유사도에 따라 정확도가 달라질 수 있으니 3단계 미리보기에서 검출 상태를 확인하세요.</p>
+  <p>색 기반 영상 인식으로 선수·공을 추적합니다. 화질, 카메라 각도, 유니폼과 잔디·라인 색의 유사도에 따라 정확도가 달라질 수 있으니 2단계 미리보기에서 검출 상태를 확인하세요.</p>
 </footer>
 
 <video id="video" muted playsinline preload="auto" hidden></video>

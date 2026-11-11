@@ -5,19 +5,13 @@
   const $ = id => document.getElementById(id);
   const PROC_MAX = 1280, FPS = 5, MAX_SEC = 60;
 
-  const PRESETS = [
-    ['빨간색', 224, 37, 37], ['주황색', 245, 124, 31], ['노란색', 245, 212, 0], ['초록색', 31, 168, 74],
-    ['하늘색', 85, 184, 240], ['파란색', 31, 85, 214], ['보라색', 122, 47, 208], ['분홍색', 240, 98, 168],
-    ['흰색', 242, 242, 242], ['검은색', 21, 21, 21],
-  ];
-
   const video = $('video');
   const proc = document.createElement('canvas');
   const pctx = proc.getContext('2d', { willReadFrequently: true });
   const preview = $('preview'), vctx = preview.getContext('2d');
 
   const S = {
-    url: null, duration: 0, want: null, wantName: '', specA: null, specB: null, clusters: null,
+    url: null, duration: 0, pair: [], specA: null, specB: null, clusters: null,
     attack: 'right', mode: 'partial', quad: null, grassHue: 120, grassTol: 26, samples: [],
     previewImg: null, det: null, detKey: '', busy: false, anims: {},
   };
@@ -103,7 +97,7 @@
     S.grassHue = g.hue; S.grassTol = g.tol;
     $('sec-setup').hidden = false; $('sec-run').hidden = false;
     resetQuad();
-    S.clusters = null;
+    S.clusters = null; S.specA = null;
     autoTeams();
     await setPreviewTime(dur * 0.1);
     $('sec-setup').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -152,36 +146,47 @@
   }
 
   /**
-   * 영상에서 선수들의 유니폼 색을 자동으로 묶은 뒤, 이용자가 고른 색과 가장 가까운 쪽을 분석 팀,
-   * 나머지 중 가장 많이 보이는 쪽을 상대 팀으로 정한다.
+   * 영상에서 선수들의 유니폼 색을 자동으로 묶어 두 팀의 필드 플레이어 색을 제시한다.
+   * 이용자가 둘 중 하나를 고르면 그 팀이 분석 대상, 나머지가 상대 팀이 된다.
    */
   function autoTeams() {
-    S.specA = S.specB = null; invalidate();
-    if (!S.want || !S.samples.length) return;
+    const prev = S.specA;
+    S.specA = S.specB = null; S.pair = []; invalidate();
+    if (!S.samples.length) return;
     if (!S.clusters) {
       const cfg = detectCfg(true), bins = [];
       for (const img of S.samples) bins.push(...vision.detect(img, cfg).otherBins);
       S.clusters = vision.clusterKits(bins, S.grassHue, S.grassTol);
     }
-    const { a, b } = vision.assignTeams(S.want, S.clusters);
-    const sw = sp => `<i style="background:${css(sp)}"></i>`;
-    const el = $('team-name');
-    if (!a) {
-      const found = [...new Set(S.clusters.map(c => colorName(c.spec)))].slice(0, 3).join(', ');
-      el.innerHTML = S.fromShot
-        ? `<span>스크린샷의 유니폼 색</span>${sw(S.want)}<b>${S.wantName}</b><span class="vs">이 영상의 팀 색과 일치하지 않습니다.</span>`
-        : `<span>영상에서 ${S.wantName} 유니폼 팀을 찾지 못했습니다.</span>`;
-      showError('color-warn', found
-        ? `영상에서 찾은 유니폼 색: ${found}. 1단계에서 ${S.fromShot ? '이 영상의 스크린샷을 다시 올리거나 색을' : '색을'} 다시 선택해 주세요.`
-        : '영상에서 선수를 찾지 못했습니다. 선수가 화면에서 너무 작게 보이면(키가 화면 높이의 약 2% 미만) 유니폼 색을 읽기 어렵습니다.');
+    S.pair = vision.teamPair(S.clusters).map(c => c.spec);
+    const box = $('team-pick');
+    box.innerHTML = '';
+    if (!S.pair.length) {
+      $('team-name').textContent = '';
+      showError('color-warn', '영상에서 선수를 찾지 못했습니다. 선수가 화면에서 너무 작게 보이면(키가 화면 높이의 약 2% 미만) 유니폼 색을 읽기 어렵습니다.');
       return;
     }
-    S.specA = a.spec; S.specB = b ? b.spec : null;
-    el.innerHTML = `<span>분석 팀</span>${sw(a.spec)}<b>${colorName(a.spec)} 유니폼</b>` +
-      (b ? `<span class="vs">상대 팀</span>${sw(b.spec)}<b>${colorName(b.spec)} 유니폼</b>` : '<span class="vs">상대 팀을 찾지 못했습니다</span>') +
-      (S.fromShot ? `<span class="ok">✓ 스크린샷의 유니폼 색${sw(S.want)}과 영상이 일치합니다</span>` : '');
-    const clash = a.spec.kind === 'chroma' && vision.hueDiff(a.spec.h, S.grassHue) <= S.grassTol + 8;
-    showError('color-warn', clash ? '유니폼 색이 잔디 색과 비슷해 선수를 구분하기 어려울 수 있습니다.' : '');
+    showError('color-warn', S.pair.length < 2 ? '영상에서 한 팀의 유니폼 색만 찾았습니다. 상대 팀 기준 분석은 제공되지 않습니다.' : '');
+    S.pair.forEach((sp, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'team-btn';
+      b.innerHTML = `<i style="background:${css(sp)}"></i><span><b>${colorName(sp)} 유니폼 팀</b><small>이 팀을 분석</small></span>`;
+      b.onclick = () => pickTeam(i);
+      box.appendChild(b);
+    });
+    // 카메라 종류 등을 바꿔 다시 계산했을 때는 앞서 고른 팀을 유지한다
+    const keep = prev ? S.pair.findIndex(sp => colorName(sp) === colorName(prev)) : -1;
+    if (keep >= 0) pickTeam(keep, true); else $('team-name').textContent = '위 두 색 중 분석할 팀을 선택해 주세요.';
+  }
+
+  function pickTeam(i, quiet) {
+    S.specA = S.pair[i]; S.specB = S.pair[1 - i] || null; invalidate();
+    document.querySelectorAll('#team-pick .team-btn').forEach((b, k) => b.classList.toggle('on', k === i));
+    const sw = sp => `<i style="background:${css(sp)}"></i>`;
+    $('team-name').innerHTML = `<span>분석 팀</span>${sw(S.specA)}<b>${colorName(S.specA)} 유니폼</b>` +
+      (S.specB ? `<span class="vs">상대 팀</span>${sw(S.specB)}<b>${colorName(S.specB)} 유니폼</b>` : '<span class="vs">상대 팀을 찾지 못했습니다</span>');
+    showError('run-error');
+    if (!quiet) drawPreview();
   }
 
   function invalidate() { S.det = null; }
@@ -198,18 +203,22 @@
     if (!S.previewImg) return;
     const W = preview.width, H = preview.height;
     vctx.drawImage(video, 0, 0, W, H);
-    let info = '분석 대상 팀을 찾지 못했습니다.';
-    if (S.specA) {
-      const r = vision.detect(S.previewImg, detectCfg(false));
+    let info = '영상에서 선수를 찾지 못했습니다.';
+    // 팀을 고르기 전에는 찾은 두 색을 각자의 유니폼 색 테두리로 보여 준다
+    const picked = !!S.specA, pa = picked ? S.specA : S.pair[0], pb = picked ? S.specB : S.pair[1];
+    if (pa) {
+      const r = vision.detect(S.previewImg, { ...detectCfg(false), specA: pa, specB: pb || null });
       const box = (o, col) => {
         vctx.strokeStyle = col; vctx.lineWidth = 2.5;
         vctx.strokeRect((o.x - o.w / 2) * W - 2, (o.y - o.h) * H - 2, o.w * W + 4, o.h * H + 4);
       };
-      r.A.forEach(o => box(o, '#22e1ff'));
-      r.B.forEach(o => box(o, '#ff5d8f'));
+      r.A.forEach(o => box(o, picked ? '#22e1ff' : css(pa)));
+      r.B.forEach(o => box(o, picked ? '#ff5d8f' : css(pb)));
       vctx.strokeStyle = '#fff'; vctx.lineWidth = 2;
       r.balls.slice(0, 4).forEach(b => { vctx.beginPath(); vctx.arc(b.x * W, b.y * H - b.r * W, 9, 0, 7); vctx.stroke(); });
-      info = `현재 화면 검출 — 분석 대상 팀 ${r.A.length}명 · 상대 팀 ${r.B.length}명 · 공 후보 ${r.balls.length}개`;
+      info = picked
+        ? `현재 화면 검출 — 분석 대상 팀 ${r.A.length}명 · 상대 팀 ${r.B.length}명 · 공 후보 ${r.balls.length}개`
+        : `현재 화면 검출 — ${colorName(pa)} ${r.A.length}명${pb ? ` · ${colorName(pb)} ${r.B.length}명` : ''} · 공 후보 ${r.balls.length}개`;
       if (r.mid) {
         // 인식한 중앙선과 센터서클
         const m = r.mid, k = (m.m * H) / W;
@@ -262,60 +271,6 @@
   preview.addEventListener('pointercancel', endDrag);
 
   // ---------- 컨트롤 ----------
-  function chooseColor(name, sp, fromShot) {
-    S.want = sp; S.wantName = name; S.fromShot = !!fromShot;
-    if (!fromShot) document.querySelectorAll('#shot-chips .chip').forEach(c => c.classList.remove('on'));
-    document.querySelectorAll('#chips-a .chip').forEach(c => c.classList.toggle('on', !fromShot && c.dataset.name === name));
-    $('drop').classList.remove('locked');
-    $('drop-title').textContent = `${fromShot ? '스크린샷의 ' : ''}${name} 유니폼 팀을 분석합니다 — 영상 파일을 끌어다 놓거나 눌러서 선택`;
-    showError('upload-error');
-    if (S.samples.length) { autoTeams(); drawPreview(); }
-  }
-  // 스크린샷에서 유니폼 색 읽기
-  $('shot-file').addEventListener('change', async e => {
-    const f = e.target.files[0];
-    e.target.value = '';
-    if (!f) return;
-    const box = $('shot-result'), text = $('shot-text'), chips = $('shot-chips');
-    box.hidden = false; chips.innerHTML = '';
-    let bmp;
-    try { bmp = await createImageBitmap(f); } catch (err) { text.textContent = '이미지를 열 수 없습니다. PNG · JPG 스크린샷을 올려 주세요.'; return; }
-    const k = Math.min(1, 1280 / bmp.width);
-    const c = $('shot-thumb');
-    c.width = Math.max(1, Math.round(bmp.width * k)); c.height = Math.max(1, Math.round(bmp.height * k));
-    const g = c.getContext('2d', { willReadFrequently: true });
-    g.drawImage(bmp, 0, 0, c.width, c.height);
-    const res = vision.kitColorsFromImage(g.getImageData(0, 0, c.width, c.height));
-    if (!res.specs.length) { text.textContent = '스크린샷에서 유니폼 색을 읽지 못했습니다. 선수가 또렷이 보이는 장면으로 다시 시도해 주세요.'; return; }
-    const pick = (sp, el) => {
-      chips.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === el));
-      chooseColor(colorName(sp), sp, true);
-    };
-    res.specs.forEach(sp => {
-      const el = document.createElement('button');
-      el.type = 'button'; el.className = 'chip';
-      el.innerHTML = `<i style="background:${css(sp)}"></i>${colorName(sp)}`;
-      el.onclick = () => pick(sp, el);
-      chips.appendChild(el);
-    });
-    const how = res.method === 'players' ? '스크린샷 속 선수들에게서' : '스크린샷에서 가장 많이 보이는 색으로';
-    if (res.specs.length === 1) {
-      text.textContent = `${how} 유니폼 색 1가지를 읽었습니다. 이 색을 분석 대상 팀으로 지정했습니다.`;
-      pick(res.specs[0], chips.firstChild);
-    } else {
-      text.textContent = `${how} 유니폼 색 ${res.specs.length}가지를 읽었습니다. 분석할 팀의 색을 눌러 주세요.`;
-    }
-  });
-
-  function buildChips() {
-    for (const [name, r, g, bl] of PRESETS) {
-      const c = document.createElement('button');
-      c.type = 'button'; c.className = 'chip'; c.dataset.name = name;
-      c.innerHTML = `<i style="background:rgb(${r},${g},${bl})"></i>${name}`;
-      c.onclick = () => chooseColor(name, vision.makeSpec(r, g, bl));
-      $('chips-a').appendChild(c);
-    }
-  }
   function seg(id, key, after) {
     const box = $(id);
     const mark = () => box.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === S[key]));
@@ -334,7 +289,6 @@
   const markMode = seg('seg-mode', 'mode', () => { $('mode-hint').textContent = HINT[S.mode]; resetQuad(); S.clusters = null; autoTeams(); drawPreview(); });
   seg('seg-attack', 'attack', () => { invalidate(); drawPreview(); });
   $('mode-hint').textContent = HINT[S.mode];
-  buildChips();
   let scrubBusy = false, scrubNext = null;
   $('scrub').addEventListener('input', async e => {
     scrubNext = (e.target.value / 1000) * S.duration;
@@ -346,11 +300,8 @@
 
   // 업로드
   const drop = $('drop');
-  const needColor = () => showError('upload-error', '먼저 1단계에서 분석할 팀의 유니폼 색을 선택해 주세요.');
-  $('file').addEventListener('click', e => { if (!S.want) { e.preventDefault(); needColor(); } });
   const accept = f => {
     if (!f) return;
-    if (!S.want) return needColor();
     if (!f.type.startsWith('video/')) return showError('upload-error', '영상 파일만 올릴 수 있습니다.');
     loadVideo(f, f.name);
   };
@@ -372,7 +323,6 @@
       $('file-info').textContent = '';
       return showError('upload-error', '샘플 영상을 불러오지 못했습니다. 웹 서버(http)로 접속했는지 확인해 주세요.');
     }
-    chooseColor('빨간색', vision.makeSpec(224, 37, 37));
     await loadVideo(blob, '샘플 영상(합성 시뮬레이션)');
   };
 
@@ -409,7 +359,7 @@
   async function run(kind) {
     if (S.busy) return;
     showError('run-error');
-    if (!S.specA) return showError('run-error', '영상에서 분석 대상 팀을 찾지 못했습니다. 1단계에서 유니폼 색을 다시 선택해 주세요.');
+    if (!S.specA) return showError('run-error', '먼저 2단계에서 분석할 팀의 유니폼 색을 선택해 주세요.');
     S.busy = true;
     $('btn-start').disabled = $('btn-formation').disabled = $('btn-movement').disabled = true;
     try {

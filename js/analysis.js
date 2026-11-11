@@ -749,7 +749,7 @@
     if (!full) {
       // 화면만으로는 알 수 없는 축(경기장 길이 방향 등)은 팀 중심을 기본 위치에 둔다
       const cs = A.filter(P => P.length >= 3).map(meanPt);
-      if (cs.length < 3) throw new Error('영상에서 분석 대상 팀 선수를 충분히 찾지 못했습니다. 1단계에서 유니폼 색을 다시 선택해 주세요.');
+      if (cs.length < 3) throw new Error('영상에서 분석 대상 팀 선수를 충분히 찾지 못했습니다. 2단계에서 다른 팀 색을 선택하거나 영상을 확인해 주세요.');
       const c0 = meanPt(cs);
       const off = { x: scale.fixedX ? 0 : 34 - c0.x, y: scale.fixedY ? 0 : 44 - c0.y };
       const sh = p => ({ x: p.x + off.x, y: p.y + off.y });

@@ -125,3 +125,16 @@ input[type=range] { flex: 1; accent-color: var(--cyan); min-width: 120px; }
 .shot-result p { margin: 0 0 10px; font-size: 14.5px; }
 .shot-result .chips { margin: 0; }
 .team-name .ok { color: var(--mint); font-size: 14px; margin-left: 18px; }
+
+.pick-lead { margin: 0 0 14px; }
+.team-pick { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.team-btn {
+  flex: 1 1 240px; display: flex; align-items: center; gap: 14px; cursor: pointer; text-align: left;
+  font: inherit; color: var(--text); background: var(--panel2); border: 1.5px solid #2a3a5c; border-radius: 14px; padding: 16px 18px;
+}
+.team-btn i { width: 44px; height: 44px; border-radius: 50%; border: 2px solid rgba(255,255,255,.45); flex: none; }
+.team-btn b { display: block; font-size: 18px; }
+.team-btn small { color: var(--dim); font-size: 13px; }
+.team-btn:hover { border-color: var(--cyan); }
+.team-btn.on { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan) inset, 0 0 22px rgba(34,225,255,.2); }
+.team-btn.on small { color: var(--cyan); }
