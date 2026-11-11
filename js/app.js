@@ -168,15 +168,18 @@
     const el = $('team-name');
     if (!a) {
       const found = [...new Set(S.clusters.map(c => colorName(c.spec)))].slice(0, 3).join(', ');
-      el.innerHTML = `<span>영상에서 ${S.wantName} 유니폼 팀을 찾지 못했습니다.</span>`;
+      el.innerHTML = S.fromShot
+        ? `<span>스크린샷의 유니폼 색</span>${sw(S.want)}<b>${S.wantName}</b><span class="vs">이 영상의 팀 색과 일치하지 않습니다.</span>`
+        : `<span>영상에서 ${S.wantName} 유니폼 팀을 찾지 못했습니다.</span>`;
       showError('color-warn', found
-        ? `영상에서 찾은 유니폼 색: ${found}. 1단계에서 색을 다시 선택해 주세요.`
+        ? `영상에서 찾은 유니폼 색: ${found}. 1단계에서 ${S.fromShot ? '이 영상의 스크린샷을 다시 올리거나 색을' : '색을'} 다시 선택해 주세요.`
         : '영상에서 선수를 찾지 못했습니다. 선수가 화면에서 너무 작게 보이면(키가 화면 높이의 약 2% 미만) 유니폼 색을 읽기 어렵습니다.');
       return;
     }
     S.specA = a.spec; S.specB = b ? b.spec : null;
     el.innerHTML = `<span>분석 팀</span>${sw(a.spec)}<b>${colorName(a.spec)} 유니폼</b>` +
-      (b ? `<span class="vs">상대 팀</span>${sw(b.spec)}<b>${colorName(b.spec)} 유니폼</b>` : '<span class="vs">상대 팀을 찾지 못했습니다</span>');
+      (b ? `<span class="vs">상대 팀</span>${sw(b.spec)}<b>${colorName(b.spec)} 유니폼</b>` : '<span class="vs">상대 팀을 찾지 못했습니다</span>') +
+      (S.fromShot ? `<span class="ok">✓ 스크린샷의 유니폼 색${sw(S.want)}과 영상이 일치합니다</span>` : '');
     const clash = a.spec.kind === 'chroma' && vision.hueDiff(a.spec.h, S.grassHue) <= S.grassTol + 8;
     showError('color-warn', clash ? '유니폼 색이 잔디 색과 비슷해 선수를 구분하기 어려울 수 있습니다.' : '');
   }
@@ -259,14 +262,51 @@
   preview.addEventListener('pointercancel', endDrag);
 
   // ---------- 컨트롤 ----------
-  function chooseColor(name, sp) {
-    S.want = sp; S.wantName = name;
-    document.querySelectorAll('#chips-a .chip').forEach(c => c.classList.toggle('on', c.dataset.name === name));
+  function chooseColor(name, sp, fromShot) {
+    S.want = sp; S.wantName = name; S.fromShot = !!fromShot;
+    if (!fromShot) document.querySelectorAll('#shot-chips .chip').forEach(c => c.classList.remove('on'));
+    document.querySelectorAll('#chips-a .chip').forEach(c => c.classList.toggle('on', !fromShot && c.dataset.name === name));
     $('drop').classList.remove('locked');
-    $('drop-title').textContent = `${name} 유니폼 팀을 분석합니다 — 영상 파일을 끌어다 놓거나 눌러서 선택`;
+    $('drop-title').textContent = `${fromShot ? '스크린샷의 ' : ''}${name} 유니폼 팀을 분석합니다 — 영상 파일을 끌어다 놓거나 눌러서 선택`;
     showError('upload-error');
     if (S.samples.length) { autoTeams(); drawPreview(); }
   }
+  // 스크린샷에서 유니폼 색 읽기
+  $('shot-file').addEventListener('change', async e => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    const box = $('shot-result'), text = $('shot-text'), chips = $('shot-chips');
+    box.hidden = false; chips.innerHTML = '';
+    let bmp;
+    try { bmp = await createImageBitmap(f); } catch (err) { text.textContent = '이미지를 열 수 없습니다. PNG · JPG 스크린샷을 올려 주세요.'; return; }
+    const k = Math.min(1, 1280 / bmp.width);
+    const c = $('shot-thumb');
+    c.width = Math.max(1, Math.round(bmp.width * k)); c.height = Math.max(1, Math.round(bmp.height * k));
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(bmp, 0, 0, c.width, c.height);
+    const res = vision.kitColorsFromImage(g.getImageData(0, 0, c.width, c.height));
+    if (!res.specs.length) { text.textContent = '스크린샷에서 유니폼 색을 읽지 못했습니다. 선수가 또렷이 보이는 장면으로 다시 시도해 주세요.'; return; }
+    const pick = (sp, el) => {
+      chips.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === el));
+      chooseColor(colorName(sp), sp, true);
+    };
+    res.specs.forEach(sp => {
+      const el = document.createElement('button');
+      el.type = 'button'; el.className = 'chip';
+      el.innerHTML = `<i style="background:${css(sp)}"></i>${colorName(sp)}`;
+      el.onclick = () => pick(sp, el);
+      chips.appendChild(el);
+    });
+    const how = res.method === 'players' ? '스크린샷 속 선수들에게서' : '스크린샷에서 가장 많이 보이는 색으로';
+    if (res.specs.length === 1) {
+      text.textContent = `${how} 유니폼 색 1가지를 읽었습니다. 이 색을 분석 대상 팀으로 지정했습니다.`;
+      pick(res.specs[0], chips.firstChild);
+    } else {
+      text.textContent = `${how} 유니폼 색 ${res.specs.length}가지를 읽었습니다. 분석할 팀의 색을 눌러 주세요.`;
+    }
+  });
+
   function buildChips() {
     for (const [name, r, g, bl] of PRESETS) {
       const c = document.createElement('button');

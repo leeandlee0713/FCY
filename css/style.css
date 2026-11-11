@@ -117,3 +117,11 @@ input[type=range] { flex: 1; accent-color: var(--cyan); min-width: 120px; }
   .card { padding: 18px; }
   .top { padding-top: 36px; }
 }
+
+.shot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+.shot .muted { margin: 0; }
+.shot-result { display: flex; gap: 16px; align-items: flex-start; margin-top: 14px; background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 12px; flex-wrap: wrap; }
+.shot-result canvas { width: 200px; max-width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); }
+.shot-result p { margin: 0 0 10px; font-size: 14.5px; }
+.shot-result .chips { margin: 0; }
+.team-name .ok { color: var(--mint); font-size: 14px; margin-left: 18px; }
