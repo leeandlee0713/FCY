@@ -54,3 +54,7 @@ python3 -m http.server 8000
 2단계 미리보기에서 검출 박스를 확인하세요.
 
 `sample/demo.*` 는 `tools/make-demo.mjs` 로 만든 합성 시뮬레이션 영상(빨간 팀 4-4-2, 파란 팀 4-3-3)입니다.
+
+## 함께 들어 있는 사이트
+
+`spot/` 폴더에 전국 유·청소년 축구팀 찾기 사이트 SPOT이 있습니다. 주소는 https://leeandlee0713.github.io/FCY/spot/ 이고, 안내는 `spot/AGENTS.md`에 있습니다. Codex와 Claude 공통 작업 규칙은 루트의 `AGENTS.md`입니다.
