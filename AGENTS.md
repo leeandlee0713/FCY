@@ -7,6 +7,7 @@
 | 사이트 | 폴더 | 주소 |
 |---|---|---|
 | FCY Tactical Board | 저장소 루트 | https://leeandlee0713.github.io/FCY/ |
+| HEYJUN Korean (한국어 교육·커뮤니티) | `heyjun/` | https://leeandlee0713.github.io/FCY/heyjun/ |
 | SPOT (전국 유·청소년 축구팀 찾기) | 별도 저장소 `leeandlee0713/spot-site` | https://spot-12324.web.app |
 
 ## 작업 순서
@@ -19,4 +20,5 @@
 ## 폴더별 안내
 
 - 루트의 전술 보드: `README.md`
+- `heyjun/`의 HEYJUN Korean: `heyjun/README.md`
 - SPOT은 이 저장소에서 고치지 않는다. 정본은 `leeandlee0713/spot-site`의 `main`이고, 그 저장소의 `WORKFLOW.md`를 따른다. 이 저장소의 `spot/`은 옛 주소를 새 주소로 넘겨 주는 안내 페이지뿐이다.
