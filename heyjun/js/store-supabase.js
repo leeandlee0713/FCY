@@ -21,6 +21,8 @@ function fail(error) {
   return new Error('요청을 처리하지 못했습니다. ' + raw);
 }
 const ok = ({ data, error }) => { if (error) throw fail(error); return data; };
+// 주소에 들어온 id가 uuid 모양이 아니면 서버에 묻지 않고 '없음'으로 처리한다.
+const isId = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v));
 
 export async function createLiveStore({ url, key }) {
   const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm');
@@ -64,7 +66,7 @@ export async function createLiveStore({ url, key }) {
       return rows.map((s) => ({ ...s, linked_email: emails.find((e) => e.student_id === s.id)?.email || '' }));
     },
     async getStudent(id) {
-      if (!user) return null;
+      if (!user || !isId(id)) return null;
       const student = ok(await sb.from('students').select('*').eq('id', id).maybeSingle());
       if (!student) return null; // 권한이 없으면 서버가 행을 돌려주지 않는다.
       const mats = ok(await sb.from('lesson_materials').select('*').eq('student_id', id));
@@ -109,7 +111,7 @@ export async function createLiveStore({ url, key }) {
 
     // ── 학습실 ─────────────────────────────────────
     async listResources() { return ok(await sb.from('resources').select('*').order('created_at', { ascending: false })); },
-    async getResource(id) { return ok(await sb.from('resources').select('*').eq('id', id).maybeSingle()); },
+    async getResource(id) { if (!isId(id)) return null; return ok(await sb.from('resources').select('*').eq('id', id).maybeSingle()); },
     async saveResource(r) {
       const row = { category: r.category, level: r.level, title: r.title, summary: r.summary, explanation: r.explanation,
         examples: r.examples, practice: r.practice, published: r.published, updated_at: new Date().toISOString() };
@@ -124,6 +126,7 @@ export async function createLiveStore({ url, key }) {
       return rows.map((p) => ({ ...p, ...author(p), comment_count: p.comments?.[0]?.count || 0 }));
     },
     async getPost(id) {
+      if (!isId(id)) return null;
       const p = ok(await sb.from('posts').select('*, author:profiles(display_name, role)').eq('id', id).maybeSingle());
       if (!p) return null;
       const cs = ok(await sb.from('comments').select('*, author:profiles(display_name, role)').eq('post_id', id).order('created_at'));
