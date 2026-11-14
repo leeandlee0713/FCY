@@ -1,6 +1,6 @@
 // 게임 3종 완주 검증 (모바일 화면)
 const { chromium, devices } = require('playwright');
-const B = process.env.HEYJUN_URL || 'http://localhost:8000/heyjun/';
+const B = process.env.HEYJUN_URL || 'http://localhost:8000/heyjun/?demo=1';
 const results = [];
 const ok = (name, cond, extra = '') => results.push(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`);
 (async () => {

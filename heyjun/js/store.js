@@ -4,7 +4,9 @@ import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 export let store = null;
 
 export async function initStore() {
-  if (SUPABASE_URL && SUPABASE_KEY) {
+  // 주소에 ?demo=1 을 붙이면 서버 대신 데모 저장소로 열린다(역할별 화면을 미리 보는 용도).
+  const forceDemo = new URLSearchParams(location.search).get('demo') === '1';
+  if (SUPABASE_URL && SUPABASE_KEY && !forceDemo) {
     const { createLiveStore } = await import('./store-supabase.js');
     store = await createLiveStore({ url: SUPABASE_URL, key: SUPABASE_KEY });
   } else {

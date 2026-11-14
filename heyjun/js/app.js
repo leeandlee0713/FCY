@@ -39,6 +39,7 @@ function parseHash() {
 let renderSeq = 0;
 async function render({ keepScroll = false } = {}) {
   const seq = ++renderSeq;
+  delete app.dataset.ready;
   const { path, query } = parseHash();
   const hit = routes.map(([re, fn]) => [path.match(re), fn]).find(([m]) => m);
   closeMenus(); nav.classList.remove('open'); menuToggle.setAttribute('aria-expanded', 'false');
@@ -56,6 +57,7 @@ async function render({ keepScroll = false } = {}) {
   markCurrent(path);
   try { await view.mount?.(app); } catch (e) { console.error(e); toast(e.message, 'bad'); }
   if (!keepScroll) { window.scrollTo(0, 0); }
+  app.dataset.ready = String(seq); // 화면이 다 그려졌음을 알리는 표시(자동 검증에서 사용)
 }
 
 // ── 메뉴 ─────────────────────────────────────────────────────────

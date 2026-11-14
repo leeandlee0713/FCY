@@ -1,6 +1,6 @@
 // 기능 흐름 검증 (데모 저장소)
 const { chromium } = require('playwright');
-const B = process.env.HEYJUN_URL || 'http://localhost:8000/heyjun/';
+const B = process.env.HEYJUN_URL || 'http://localhost:8000/heyjun/?demo=1';
 const results = [];
 const ok = (name, cond, extra = '') => { results.push(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`); };
 (async () => {

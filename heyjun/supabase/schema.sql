@@ -356,6 +356,7 @@ create policy "settings: 강사만 수정" on public.site_settings for update to
   using (private.is_teacher()) with check (private.is_teacher());
 
 -- ── 테이블 접근 권한(RLS가 행 단위로 다시 걸러 낸다) ───────────────
+revoke all on all tables in schema public from anon;
 grant select on public.profiles, public.resources, public.posts, public.comments, public.site_settings to anon;
 grant insert on public.applications to anon;
 grant select, insert, update, delete on all tables in schema public to authenticated;

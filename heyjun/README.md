@@ -5,24 +5,23 @@
 
 ## 두 가지 동작 방식
 
-| | 데모 모드 (지금) | 실제 운영 |
+| | 실제 운영 (기본) | 데모 모드 |
 |---|---|---|
-| 조건 | `js/config.js`가 비어 있음 | `js/config.js`에 Supabase URL·publishable key 입력 |
-| 저장 | 이 브라우저에만 (localStorage, IndexedDB) | Supabase (로그인·Postgres·파일 저장소) |
-| 권한 | 화면과 브라우저 코드에서만 흉내 | 서버의 RLS·저장소 정책이 강제 |
-| 표시 | 화면 맨 위에 「데모 모드」 띠, 로그인 화면에 예시 계정 | 띠와 예시 계정이 사라짐 |
+| 조건 | `js/config.js`에 Supabase URL·publishable key가 있음 | 주소 끝에 `?demo=1`을 붙이거나 `js/config.js`를 비움 |
+| 저장 | Supabase (로그인·Postgres·파일 저장소) | 이 브라우저에만 (localStorage, IndexedDB) |
+| 권한 | 서버의 RLS·저장소 정책이 강제 | 화면과 브라우저 코드에서만 흉내 |
+| 표시 | 일반 화면 | 화면 맨 위에 「데모 모드」 띠, 로그인 화면에 예시 계정 |
 
-데모 모드의 권한은 보안 장치가 아니다. 실제 학생 자료는 Supabase를 연결한 뒤에 올린다.
+데모 모드의 권한은 보안 장치가 아니다. 역할별 화면을 미리 보는 용도로만 쓴다.
 
-## Supabase 연결 순서
+## Supabase
 
-1. Supabase 프로젝트를 만든다.
-2. SQL Editor에서 `supabase/schema.sql` 전체를 실행하고, 이어서 `supabase/seed.sql`(예시 학습 자료)을 실행한다.
-3. Authentication 설정에서 이메일 인증(Confirm email)을 켜 두고, Site URL을 사이트 주소로 맞춘다.
-4. `js/config.js`에 Project URL과 publishable key를 넣는다. service_role 키는 넣지 않는다.
-5. 강사가 `private.admin_emails`에 등록된 이메일(schema.sql 참고)로 회원가입하고 인증 메일의 링크를 누르면 자동으로 강사(관리자)가 된다. 관리자 계정을 따로 만들지 않는다.
+프로젝트 「HEYJUN Korean」(ref `reccmjdcnmpqkplagiiz`, 서울 리전)에 연결되어 있다. `supabase/schema.sql`과 `supabase/seed.sql`이 적용된 상태다.
+새 프로젝트로 옮길 때는 SQL Editor에서 두 파일을 차례로 실행하고 `js/config.js`의 URL과 publishable key를 바꾼다. service_role 키는 넣지 않는다.
 
-기본 메일 발송은 시간당 몇 통으로 제한된다. 가입자가 늘면 Supabase에 SMTP(메일 발송 서비스)를 연결한다.
+- 강사 계정: `private.admin_emails`에 등록된 이메일(schema.sql 참고)로 회원가입하고 인증 메일의 링크를 누르면 자동으로 강사(관리자)가 된다. 관리자 계정을 따로 만들지 않는다.
+- Supabase 대시보드 Authentication → URL Configuration의 Site URL을 사이트 주소(`https://leeandlee0713.github.io/FCY/heyjun/`)로 맞춰야 인증 메일의 링크가 사이트로 돌아온다.
+- 기본 메일 발송은 시간당 몇 통으로 제한된다. 가입자가 늘면 Supabase에 SMTP(메일 발송 서비스)를 연결한다.
 
 ## 역할과 권한
 
@@ -60,7 +59,9 @@ node heyjun/tests/flows.cjs
 node heyjun/tests/games.cjs
 ```
 
-로컬 서버를 띄운 상태에서 Playwright로 역할별 접근, 자료 등록·수정·삭제, 커뮤니티, 신청, 게임 완주를 확인한다(데모 저장소 기준).
+로컬 서버를 띄운 상태에서 Playwright로 역할별 접근, 자료 등록·수정·삭제, 커뮤니티, 신청, 게임 완주를 확인한다(데모 저장소 기준, `?demo=1`).
+
+`tests/live.cjs`는 같은 흐름을 실서버에서 확인한다. 인증된 테스트 계정 4개가 필요하며 파일 머리말에 적혀 있다.
 
 `tests/rls.sql`은 빈 로컬 Postgres에 `schema.sql`을 올리고 방문자·회원·학생 A/B·강사 권한 40가지를 확인한다. heyjun 폴더에서 `psql -f tests/rls.sql`로 실행한다.
 
