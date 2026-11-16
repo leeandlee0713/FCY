@@ -161,20 +161,45 @@ export const BLOCK_WORDS = {
   ],
 };
 
-/** 게임 C — 듣고 고르기. answer를 음성으로 들려주고 options 중에서 고른다. */
-export const LISTEN_ITEMS = [
-  { answer: '가', options: ['가', '카', '까'], note: 'ㄱ은 부드러운 소리, ㅋ은 숨이 세게 나오는 소리, ㄲ은 힘을 준 소리예요.' },
-  { answer: '나', options: ['나', '다', '라'], note: 'ㄴ = n, ㄷ = d, ㄹ = r/l.' },
-  { answer: '오이', options: ['우유', '오이', '아이'], note: '오이 = cucumber.' },
-  { answer: '우유', options: ['우유', '오이', '여우'], note: '우유 = milk.' },
-  { answer: '사과', options: ['사자', '과자', '사과'], note: '사과 = apple, 사자 = lion, 과자 = snack.' },
-  { answer: '바지', options: ['바다', '바지', '아버지'], note: '바지 = trousers, 바다 = sea.' },
-  { answer: '고기', options: ['거기', '고기', '고구마'], note: '고기 = meat, 거기 = there.' },
-  { answer: '물', options: ['물', '불', '풀'], note: '물 = water, 불 = fire, 풀 = grass.' },
-  { answer: '눈', options: ['문', '논', '눈'], note: '눈 = eye / snow, 문 = door.' },
-  { answer: '달', options: ['달', '딸', '탈'], note: '달 = moon, 딸 = daughter, 탈 = mask.' },
-  { answer: '방', options: ['밤', '방', '빵'], note: '방 = room, 밤 = night, 빵 = bread.' },
-  { answer: '한국', options: ['한글', '학교', '한국'], note: '한국 = Korea, 한글 = the Korean alphabet, 학교 = school.' },
-  { answer: '커피', options: ['코피', '커피', '거미'], note: '커피 = coffee, 코피 = nosebleed.' },
-  { answer: '어머니', options: ['아버지', '어머니', '아저씨'], note: '어머니 = mother, 아버지 = father.' },
-];
+/** Three reviewed vocabulary levels; emoji follow the existing picture style. */
+export const MATCH_LEVELS = {
+  beginner: MATCH_ITEMS.filter(x => ['사과','바나나','포도','우유','빵','개','새','나무','집','책','달','해'].includes(x.ko)),
+  intermediate: [
+    ['자전거','bicycle','🚲'],['비행기','airplane','✈️'],['병원','hospital','🏥'],['학교','school','🏫'],['연필','pencil','✏️'],
+    ['안경','glasses','👓'],['가방','bag','🎒'],['당근','carrot','🥕'],['감자','potato','🥔'],['토끼','rabbit','🐰'],
+  ].map(([ko,en,pic])=>({ko,en,pic})),
+  advanced: [
+    ['소방차','fire engine','🚒'],['구급차','ambulance','🚑'],['인공위성','satellite','🛰️'],['현미경','microscope','🔬'],['망원경','telescope','🔭'],
+    ['소화기','fire extinguisher','🧯'],['수하물','luggage','🧳'],['안전모','safety helmet','⛑️'],['회전목마','carousel','🎠'],['고속열차','high-speed train','🚄'],
+  ].map(([ko,en,pic])=>({ko,en,pic})),
+};
+BLOCK_WORDS.intermediate = BLOCK_WORDS.batchim;
+BLOCK_WORDS.advanced = MATCH_LEVELS.advanced.map(({ko,en,pic})=>({word:ko,en,pic}));
+
+/** English → Korean: one unambiguous answer, verb/conjugation feedback. */
+export const SENTENCE_ITEMS = [
+  ['I want to read a book.', '저는 책을 읽고 싶어요.', ['저는 책을 쓰고 싶어요.','저는 책을 먹고 싶어요.'], '읽다 (read) → 읽고 싶어요 (want to read). 쓰다 = write, 먹다 = eat.'],
+  ['I drank water.', '저는 물을 마셨어요.', ['저는 물을 마실 거예요.','저는 물을 샀어요.'], '마시다 (drink) → 마셨어요: past tense. 살다 is live; 사다 is buy.'],
+  ['I will go to school tomorrow.', '저는 내일 학교에 갈 거예요.', ['저는 어제 학교에 갔어요.','저는 내일 학교에서 잘 거예요.'], '가다 (go) → 갈 거예요: future plan. 자다 = sleep.'],
+  ['I am listening to music.', '저는 음악을 듣고 있어요.', ['저는 음악을 만들고 있어요.','저는 음악을 듣고 싶어요.'], '듣다 (listen) + 고 있어요 = listening now. 만들다 = make.'],
+  ['Please open the door.', '문을 열어 주세요.', ['문을 닫아 주세요.','문을 찾아 주세요.'], '열다 (open) → 열어 주세요: polite request. 닫다 = close.'],
+  ['I can swim.', '저는 수영할 수 있어요.', ['저는 수영할 수 없어요.','저는 수영하기 싫어요.'], '수영하다 (swim) → 수영할 수 있어요: ability. 없어요 expresses cannot.'],
+  ['I am cooking dinner.', '저는 저녁을 요리하고 있어요.', ['저는 저녁을 주문하고 있어요.','저는 저녁을 먹고 있어요.'], '요리하다 (cook) → 요리하고 있어요. 주문하다 = order, 먹다 = eat.'],
+  ['I met a friend yesterday.', '저는 어제 친구를 만났어요.', ['저는 내일 친구를 만날 거예요.','저는 어제 친구를 기다렸어요.'], '만나다 (meet) → 만났어요: past tense. 기다리다 = wait.'],
+  ['I want to learn Korean.', '저는 한국어를 배우고 싶어요.', ['저는 한국어를 가르치고 싶어요.','저는 한국어를 잊고 싶어요.'], '배우다 (learn) → 배우고 싶어요. 가르치다 = teach, 잊다 = forget.'],
+  ['Please sit here.', '여기에 앉아 주세요.', ['여기에 서 주세요.','여기에 누워 주세요.'], '앉다 (sit) → 앉아 주세요. 서다 = stand, 눕다 = lie down.'],
+  ['I have to buy bread.', '저는 빵을 사야 해요.', ['저는 빵을 팔아야 해요.','저는 빵을 구워야 해요.'], '사다 (buy) → 사야 해요: obligation. 팔다 = sell, 굽다 = bake.'],
+  ['I walk in the park every day.', '저는 매일 공원에서 걸어요.', ['저는 매일 공원에서 뛰어요.','저는 매일 공원에서 쉬어요.'], '걷다 (walk) → 걸어요: ㄷ changes to ㄹ before 어요. 뛰다 = run, 쉬다 = rest.'],
+].map(([en,answer,distractors,note])=>({en,answer,options:[answer,...distractors],note}));
+
+export const STORY_SAMPLES = [{
+  id: 'sample-story-seed', category:'storybook', level:'beginner', title:'[예시 동화] 작은 씨앗의 선물',
+  summary:'작은 씨앗과 새의 이야기. An original short story about sharing.', explanation:'직접 만든 학습용 예시 동화입니다. 한 문장씩 읽고 영어 뜻을 확인하세요.',
+  examples:[
+    {ko:'작은 새가 씨앗을 찾았어요.',en:'A little bird found a seed.'},
+    {ko:'새는 씨앗을 땅에 심었어요.',en:'The bird planted the seed in the ground.'},
+    {ko:'매일 물을 주었어요.',en:'It watered the seed every day.'},
+    {ko:'봄이 오자 예쁜 꽃이 피었어요.',en:'When spring came, a beautiful flower bloomed.'},
+    {ko:'새는 친구들과 꽃을 보았어요. 모두 행복했어요.',en:'The bird looked at the flower with its friends. Everyone was happy.'}
+  ], practice:[{q:'새는 씨앗을 어디에 심었어요?',options:['땅에','책에','가방에'],answer:0,explain:'심다 = plant. 새는 씨앗을 땅에 심었어요.'}], is_sample:true, published:true
+}];

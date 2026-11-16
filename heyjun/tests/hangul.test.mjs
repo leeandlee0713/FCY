@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compose, decompose, preview, recipe } from '../js/hangul.js';
-import { BLOCK_WORDS, MATCH_ITEMS, LISTEN_ITEMS } from '../js/content.js';
+import { BLOCK_WORDS, MATCH_ITEMS, MATCH_LEVELS, SENTENCE_ITEMS } from '../js/content.js';
 
 test('자음+모음(+받침)을 음절로 조합한다', () => {
   assert.equal(compose('ㄱ', 'ㅏ'), '가');
@@ -26,6 +26,18 @@ test('게임마다 문제가 10개 이상이고 형식이 맞다', () => {
   assert.ok(BLOCK_WORDS.beginner.length >= 10 && BLOCK_WORDS.batchim.length >= 10);
   for (const w of BLOCK_WORDS.beginner) for (const ch of w.word) assert.equal(decompose(ch).jong, '', w.word);
   for (const w of BLOCK_WORDS.batchim) assert.ok([...w.word].some((ch) => decompose(ch).jong), w.word);
-  assert.ok(LISTEN_ITEMS.length >= 10);
-  for (const q of LISTEN_ITEMS) assert.ok(q.options.includes(q.answer) && new Set(q.options).size === q.options.length, q.answer);
+  assert.ok(SENTENCE_ITEMS.length >= 10);
+  for (const q of SENTENCE_ITEMS) assert.ok(q.options.includes(q.answer) && new Set(q.options).size === q.options.length, q.answer);
+});
+
+test('각 레벨의 10개 이상 고유 어휘와 모든 음절이 정확하게 조립된다', () => {
+  for (const level of ['beginner','intermediate','advanced']) {
+    const words=MATCH_LEVELS[level];
+    assert.ok(words.length>=10);
+    assert.equal(new Set(words.map(x=>x.pic)).size,words.length);
+    assert.ok(BLOCK_WORDS[level].length>=10);
+    for (const {word} of BLOCK_WORDS[level]) for (const ch of word) {
+      const d=decompose(ch); assert.equal(compose(d.cho,d.jung,d.jong),ch);
+    }
+  }
 });

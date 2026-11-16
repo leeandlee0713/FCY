@@ -1,6 +1,7 @@
 // 데모 저장소: 서버가 연결되지 않았을 때 이 브라우저(localStorage + IndexedDB)에만 저장한다.
 // 실제 서버와 같은 규칙(누가 무엇을 볼 수 있는지)을 흉내 내지만, 브라우저 안에서만 지켜지는 규칙이므로
 // 보안 장치가 아니다. 실제 보호는 supabase/schema.sql의 RLS와 저장소 정책이 맡는다.
+import { withStoryTemplate, storyTemplate } from './resources.js';
 import { uid } from './util.js';
 import { SAMPLE_RESOURCES, SAMPLE_POSTS } from './content.js';
 
@@ -186,14 +187,16 @@ export async function createLocalStore() {
 
     // ── 학습실 ─────────────────────────────────────
     async listResources() {
-      return db.resources.filter((r) => r.published || isTeacher()).sort((a, b) => b.created_at.localeCompare(a.created_at));
+      return withStoryTemplate(db.resources.filter((r) => r.published || isTeacher()).sort((a, b) => b.created_at.localeCompare(a.created_at)));
     },
     async getResource(id) {
+      if (storyTemplate(id)) return storyTemplate(id);
       const r = db.resources.find((x) => x.id === id);
       return r && (r.published || isTeacher()) ? { ...r } : null;
     },
     async saveResource(r) {
       needTeacher();
+      if (storyTemplate(r.id)) r = {...r,id:undefined};
       if (r.id) Object.assign(db.resources.find((x) => x.id === r.id), r, { updated_at: now() });
       else { r = { ...r, id: uid(), is_sample: false, created_at: now(), updated_at: now() }; db.resources.push(r); }
       save(); return r.id;

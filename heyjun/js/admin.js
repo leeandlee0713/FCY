@@ -103,7 +103,7 @@ async function resources() {
       ${rows.map((r) => `<tr><td><a href="#/learn/${esc(r.id)}">${esc(r.title)}</a></td><td>${CATEGORIES[r.category]?.[0]}</td><td>${LEVELS[r.level]?.[0]}</td>
         <td>${r.published === false ? '비공개' : '공개'}${r.is_sample ? ' · 예시' : ''}</td>
         <td><span class="btn-row"><a class="btn btn-secondary btn-sm" href="#/learn/${esc(r.id)}/edit">${bi('수정', 'Edit')}</a>
-          <button class="btn btn-danger btn-sm" data-del="${esc(r.id)}">${bi('삭제', 'Delete')}</button></span></td></tr>`).join('')}
+          ${r.is_template ? '<span class="meta">예시 원본 · Template</span>' : `<button class="btn btn-danger btn-sm" data-del="${esc(r.id)}">${bi('삭제', 'Delete')}</button>`}</span></td></tr>`).join('')}
     </tbody></table></div>` : empty(bi('아직 자료가 없습니다', 'No notes yet'))}`,
   mount(root) {
     $$('[data-del]', root).forEach((b) => b.addEventListener('click', () => confirm('이 자료를 삭제할까요? 되돌릴 수 없습니다.') && act(() => store.deleteResource(b.dataset.del), '삭제했습니다.')));

@@ -4,7 +4,7 @@ const B = process.env.HEYJUN_URL || 'http://localhost:8000/heyjun/?demo=1';
 const results = [];
 const ok = (name, cond, extra = '') => { results.push(`${cond ? 'PASS' : 'FAIL'}  ${name} ${extra}`); };
 (async () => {
-  const b = await chromium.launch();
+  const b = await chromium.launch({executablePath:process.env.CHROMIUM_PATH || '/usr/bin/chromium',args:['--no-sandbox']});
   const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
   const p = await ctx.newPage();
   const errs = [];

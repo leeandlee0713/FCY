@@ -62,11 +62,12 @@ export async function home() {
 
   <section class="section"><div class="wrap">
     <div class="section-head"><h2>${bi('무료 학습실', 'Free study room')}</h2><a href="#/learn">${bi('전체 자료 보기', 'All notes')} →</a></div>
-    <div class="grid g2">
+    <div class="grid g3">
       <a class="card tint-sage" href="#/learn?cat=expression"><div class="card-icon" aria-hidden="true">💬</div><h3>${bi('한국어 표현', 'Expressions')}</h3>
         <p>인사, 가게, 자기소개처럼 바로 쓰는 말. <span class="en" lang="en">Phrases you can use today.</span></p></a>
       <a class="card tint-peach" href="#/learn?cat=grammar"><div class="card-icon" aria-hidden="true">📘</div><h3>${bi('한국어 문법', 'Grammar')}</h3>
         <p>조사와 문장 끝을 쉬운 설명과 예문으로. <span class="en" lang="en">Particles and endings, explained simply.</span></p></a>
+      <a class="card tint-lav" href="#/learn?cat=storybook"><div class="card-icon" aria-hidden="true">📚</div><h3>${bi('동화책', 'Storybooks')}</h3><p>${bi('짧은 이야기를 한국어와 영어로 읽어요.', 'Read short stories in Korean and English.')}</p></a>
     </div>
   </div></section>
 
@@ -358,10 +359,10 @@ export async function learnDetail(id) {
     <h1>${esc(r.title)}</h1><p>${esc(r.summary)}</p>
     ${r.is_sample ? `<p class="notice small">${bi('이 자료는 예시입니다. 강사가 실제 자료로 바꿀 수 있습니다.', 'This is a sample note. The teacher can replace it.')}</p>` : ''}
     ${isTeacher ? `<div class="btn-row"><a class="btn btn-secondary btn-sm" href="#/learn/${esc(r.id)}/edit">${bi('수정', 'Edit')}</a>
-      <button class="btn btn-danger btn-sm" data-act="delete">${bi('삭제', 'Delete')}</button></div>` : ''}`,
+      ${r.is_template ? '' : `<button class="btn btn-danger btn-sm" data-act="delete">${bi('삭제', 'Delete')}</button>`}</div>` : ''}`,
     `<article class="prose stack">
       <section><h2>1. ${bi('설명', 'Explanation')}</h2>${paragraphs(r.explanation) || `<p class="muted">${bi('설명이 아직 없습니다.', 'No explanation yet.')}</p>`}</section>
-      <section><h2>2. ${bi('예문', 'Examples')}</h2>
+      <section><h2>2. ${r.category === 'storybook' ? bi('동화 읽기', 'Read the story') : bi('예문', 'Examples')}</h2>
         ${(r.examples || []).length ? r.examples.map((x) => `<div class="example"><span class="ko" lang="ko">${esc(x.ko)}</span><span class="muted" lang="en">${esc(x.en)}</span></div>`).join('')
           : `<p class="muted">${bi('예문이 아직 없습니다.', 'No examples yet.')}</p>`}</section>
       <section><h2>3. ${bi('간단한 연습', 'Quick practice')}</h2>
@@ -397,7 +398,7 @@ export async function learnEdit(id) {
   if (!r) return notFound();
   const opt = (map, cur) => Object.entries(map).map(([k, v]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${v[0]} · ${v[1]}</option>`).join('');
   const html = page(`<h1>${id ? bi('자료 수정', 'Edit note') : bi('새 자료 작성', 'New note')}</h1>`,
-    `<form class="form card" id="res-form" style="max-width:760px">
+    `<form class="form card" id="res-form" style="max-width:760px">${r.is_template ? '<p class="notice">예시 원본입니다. 저장하면 관리할 수 있는 새 동화책이 등록됩니다. Save to create your own editable story.</p>' : ''}
       <div class="grid g2">
         <div class="field"><label for="r-cat">${bi('카테고리', 'Category')}</label><select id="r-cat" name="category">${opt(CATEGORIES, r.category)}</select></div>
         <div class="field"><label for="r-level">${bi('학습 수준', 'Level')}</label><select id="r-level" name="level">${opt(LEVELS, r.level)}</select></div>
@@ -418,6 +419,8 @@ export async function learnEdit(id) {
     </form>`);
   return { title: id ? '자료 수정' : '새 자료', html, mount(root) {
     const form = $('#res-form', root);
+    const labels = () => { root.querySelector('label[for=r-ex]').textContent = form.category.value === 'storybook' ? '2. 동화 본문 · Story text (한국어 | English)' : '2. 예문 · Examples'; };
+    form.category.onchange = labels; labels();
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (!form.reportValidity()) return;
@@ -561,6 +564,7 @@ export function games() {
   return { title: '한글 게임', html };
 }
 export function game(id) {
+  if (id === 'listen') id = 'sentence';
   const g = GAME_LIST.find((x) => x.id === id);
   const html = page(`<p><a href="#/games">← ${bi('게임 목록', 'All games')}</a></p><h1 class="sr-only">${g.ko}</h1>`, '<div class="game" id="game-root"></div>');
   return { title: g.ko, html, mount: (root) => mountGame(id, $('#game-root', root)) };
@@ -576,7 +580,7 @@ export function login() {
         <div class="field"><label for="l-pass">${bi('비밀번호', 'Password')}</label><input id="l-pass" name="password" type="password" required autocomplete="current-password"></div>
         ${status}
         <div class="btn-row"><button class="btn btn-primary btn-lg" type="submit">${bi('로그인', 'Log in')}</button>
-          <a class="btn btn-ghost" href="#/signup">${bi('회원가입', 'Sign up')}</a></div>
+          <a class="btn btn-ghost" href="#/signup">${bi('회원가입', 'Sign up')}</a><a class="btn btn-ghost" href="#/verify">${bi('이메일 인증 도움', 'Confirm email')}</a></div>
       </form>
       ${demo ? `<div class="card tint-lav"><h2>${bi('데모 계정으로 둘러보기', 'Try a demo account')}</h2>
         <p class="small">${bi('서버 연결 전이라 아래 예시 계정으로 각 역할의 화면을 볼 수 있습니다. 실제 운영에서는 이 상자가 사라집니다.', 'Until the server is connected you can preview each role with these sample accounts. This box disappears in the live site.')}</p>
@@ -615,8 +619,30 @@ export function signup() {
       if (out.needsVerification) {
         form.outerHTML = `<div class="card notice-ok" role="status"><h2>✉️ ${bi('이메일을 확인해 주세요', 'Check your email')}</h2>
           <p>${bi('보내 드린 메일의 인증 링크를 누르면 가입이 끝납니다. 그다음 로그인해 주세요.', 'Click the link in the email we sent to finish signing up. Then log in.')}</p>
-          <a class="btn btn-secondary" href="#/login">${bi('로그인으로', 'Go to log in')}</a></div>`;
+          <a class="btn btn-primary" href="#/verify">${bi('인증 링크가 안 열리나요?', 'Link not opening?')}</a> <a class="btn btn-secondary" href="#/login">${bi('로그인으로', 'Go to log in')}</a></div>`;
       } else { toast('가입을 환영합니다! Welcome!'); go('#/'); }
     });
   } };
+}
+
+export function verifyEmail() {
+  const demo = store.mode === 'demo';
+  return { title:'이메일 인증', html:page(`<h1>${bi('이메일 인증', 'Confirm your email')}</h1><p>${bi('메일 링크가 열리지 않으면 메일에서 링크 주소를 복사해 아래에 붙여 넣으세요. 링크는 인증에만 사용하며 저장하지 않습니다.', 'If the email link does not open, copy its link address and paste it below. The link is used only for verification and is not stored.')}</p>`,
+    `${store.authNotice ? `<p class="notice" role="status">${esc(store.authNotice)}</p>` : ''}
+    ${demo ? `<p class="notice">${bi('데모에서는 실제 메일을 보내거나 인증하지 않습니다.', 'Demo mode cannot send or verify real emails.')}</p>` : `<div class="stack">
+    <form class="form card" id="verify-form"><div class="field"><label for="verify-link">${bi('인증 메일의 링크 주소', 'Confirmation link from your email')}</label><input id="verify-link" name="link" type="password" required autocomplete="off" spellcheck="false"></div>${status}<button class="btn btn-primary" type="submit">${bi('이메일 인증하기', 'Confirm email')}</button></form>
+    <form class="form card" id="resend-form"><h2>${bi('인증 메일 다시 받기', 'Resend email')}</h2><p>${bi('이미 누른 링크는 사용되었을 수 있습니다. 만료되었으면 새 메일을 받으세요.', 'A clicked link may already be used. Request a fresh email if it has expired.')}</p><div class="field"><label for="verify-email">${bi('가입한 이메일', 'Your signup email')}</label><input id="verify-email" name="email" type="email" required autocomplete="email"></div>${status}<button class="btn btn-secondary" type="submit">${bi('다시 보내기', 'Resend')}</button></form></div>`}
+    <div class="btn-row" style="margin-top:24px"><a class="btn btn-secondary" href="#/login">${bi('로그인', 'Log in')}</a><a class="btn btn-ghost" href="#/">${bi('홈으로', 'Back home')}</a></div>`), mount(root) {
+      if(demo)return;
+      const verify=$('#verify-form',root), resend=$('#resend-form',root);
+      verify.onsubmit=async e=>{e.preventDefault();if(!verify.reportValidity())return;
+        const link=verify.link.value; verify.link.value='';
+        const done=await submitWith(verify,()=>store.verifyEmailLink(link));
+        if(done){toast('이메일 인증 완료 · Email confirmed');go('#/');}
+      };
+      resend.onsubmit=async e=>{e.preventDefault();if(!resend.reportValidity())return;
+        const done=await submitWith(resend,async d=>{await store.resendVerification(d.email);return true;},{okMsg:'요청을 접수했습니다. 받은편지함·스팸함을 확인하세요. Check your inbox and spam folder.'});
+        if(done){const b=resend.querySelector('button');b.disabled=true;setTimeout(()=>{b.disabled=false;},60000);}
+      };
+    }};
 }

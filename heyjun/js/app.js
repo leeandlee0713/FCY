@@ -24,9 +24,10 @@ const routes = [
   [/^\/community\/([\w-]+)\/edit$/, V.postEdit],
   [/^\/community\/([\w-]+)$/, V.post],
   [/^\/games$/, V.games],
-  [/^\/games\/(match|blocks|listen)$/, V.game],
+  [/^\/games\/(match|blocks|sentence|listen)$/, V.game],
   [/^\/login$/, V.login],
   [/^\/signup$/, V.signup],
+  [/^\/verify$/, V.verifyEmail],
   [/^\/admin(?:\/(\w+))?$/, adminView],
 ];
 
@@ -92,6 +93,7 @@ function renderNav() {
         <ul class="sub" id="sub-learn">
           <li><a href="#/learn?cat=expression">${bi('한국어 표현', 'Expressions')}</a></li>
           <li><a href="#/learn?cat=grammar">${bi('한국어 문법', 'Grammar')}</a></li>
+          <li><a href="#/learn?cat=storybook">${bi('동화책', 'Storybooks')}</a></li>
           <li><a href="#/learn">${bi('전체 자료', 'All notes')}</a></li>
         </ul>
       </li>

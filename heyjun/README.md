@@ -69,4 +69,37 @@ node heyjun/tests/games.cjs
 
 강사 사진·소개 문장·경력·교육 철학·수업 방식과 수업료·후기·문의 정보는 「입력 대기」로 표시된다. 강사가 「관리 → 강사 소개 · 운영 정보」에서 입력한다.
 학습 자료 8편과 데모 커뮤니티 글은 「예시」로 표시되며 관리 화면에서 고치거나 지운다.
-게임 그림은 기기의 이모지를 쓴다. 한국어 음성은 브라우저 내장 음성을 쓰며, 음성이 없는 기기에서는 듣기 게임이 시작되지 않고 안내가 나온다.
+게임 그림은 기기의 이모지를 쓴다. 블록 조립의 선택적 음성 힌트만 브라우저 한국어 음성을 사용한다. 문장 만들기는 음성 설치 없이 실행된다.
+
+
+## 2026-11 수정: 게임·동화책·이메일 인증
+
+- `js/content.js`: 짝 맞추기/블록 조립의 Beginner, Intermediate, Advanced 어휘 각 10개 이상, 문장 만들기 12문제. 한 판은 무작위 10문제. 이전 `#/games/listen` 링크도 문장 만들기로 열린다.
+- 짝 맞추기/블록 기록은 기존처럼 각 게임의 모든 레벨을 합산해 회원 DB에 저장한다. 새 문장 만들기 기록은 이 브라우저의 localStorage에 계정 ID별로 분리 저장한다(비회원은 별도 키). 기존 듣기 기록을 덮어쓰지 않으며 다른 기기로 동기화하지 않는다. 화면에 이 범위를 표시한다.
+- 학습실은 문법/표현/동화책. 동화책이 없을 때 학습용 창작 예시 원본을 제공한다. 강사는 원본을 수정·저장해 본인 자료로 등록한 후 수정/삭제할 수 있다. 일반 자료와 같은 작성 양식에서 동화 본문을 `한국어 | English` 줄 단위로 작성한다.
+- 기존 운영 DB의 category CHECK를 변경하지 않고 호환되도록 `js/resources.js`에서 동화책을 `category=expression`, `examples[0]._heyjun_kind=storybook_v1` 표식으로 직렬화한다. 화면/관리에서는 storybook으로 복원한다. 원래 문법/표현 자료는 변경하지 않는다. 기존 resources RLS가 그대로 쓰기·공개 권한을 검사한다. 이 방식에는 DB 관리자 설정이나 마이그레이션이 필요 없다.
+- `js/auth.js`의 복귀 주소는 실제 GitHub Pages 경로로 고정했다. `#/verify`에서 메일 재발송 및 복사한 원본 인증 링크를 Supabase `verifyOtp`로 확인할 수 있다. 다른 프로젝트/비밀번호 재설정 링크는 거절하고 링크를 저장하거나 그 주소로 이동하지 않는다. 인증 완료 시 Supabase 세션으로 로그인한다. 관리자 승격은 기존 서버 트리거가 인증된 `hyejunlee23@gmail.com`에만 적용한다. 프런트엔드에서 역할을 부여하지 않는다.
+
+### 인증 서버에 남아 있는 설정
+
+2026-11-16 실서버의 가짜 만료 토큰 진단 요청은 HTTP 303과 `http://localhost:3000` 복귀 주소를 반환했다. 배포 주소를 redirect_to로 지정해도 같았다. 현재 연결된 Supabase 계정에는 HEYJUN 프로젝트 권한이 없으며 FCY MAP 프로젝트만 보인다. 따라서 서버 설정을 변경했다고 주장할 수 없다.
+
+HEYJUN 프로젝트 소유자가 Authentication → URL Configuration에서 다음 **두 항목**을 설정해야 메일 링크 클릭만으로 복귀한다:
+
+- Site URL: `https://leeandlee0713.github.io/FCY/heyjun/`
+- Redirect URLs: `https://leeandlee0713.github.io/FCY/heyjun/`
+
+[설정 화면](https://supabase.com/dashboard/project/reccmjdcnmpqkplagiiz/auth/url-configuration)
+
+그 전에도 사이트의 **이메일 인증 도움** 화면에서 메일의 링크 주소를 복사해 인증 요청을 보낼 수 있다. 이미 링크를 눌렀다면 인증 자체는 끝났을 수 있으므로 먼저 로그인하고, 만료 오류가 나면 재발송한다. 실제 Gmail 수신과 유효한 링크로 완료하는 전체 과정은 해당 메일함 접근 없이 검증할 수 없다.
+
+### 추가 검증
+
+```bash
+node --test heyjun/tests/*.test.mjs
+node heyjun/tests/games.cjs
+node heyjun/tests/flows.cjs
+node heyjun/tests/revision.cjs
+```
+
+Playwright와 Chromium이 필요하다. `CHROMIUM_PATH`로 브라우저 경로를 지정할 수 있다. 게임 검증은 7개 게임/레벨 조합 70문제 완주, 터치·드래그, 오답·정답, 결과·재시작을 확인한다. revision 검증은 동화책 CRUD(데모), 390/768/1440px 화면, 실제 인증 서버의 무효 토큰 거절 및 만료 콜백 처리를 확인한다. 데모 권한 검증 결과는 운영 DB의 계정별 RLS 검증을 대신하지 않는다.

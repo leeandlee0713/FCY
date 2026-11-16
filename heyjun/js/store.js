@@ -18,10 +18,11 @@ export async function initStore() {
 
 // 게임 기록: 로그인한 회원은 계정에, 비회원은 이 기기에만 저장한다.
 const GUEST_KEY = 'heyjun.scores.guest';
-const guestScores = () => { try { return JSON.parse(localStorage.getItem(GUEST_KEY)) || {}; } catch { return {}; } };
+const scoreKey = () => store?.user ? `heyjun.scores.device.${store.user.id}` : GUEST_KEY;
+const guestScores = () => { try { return JSON.parse(localStorage.getItem(scoreKey())) || {}; } catch { return {}; } };
 
 export async function loadBest(game) {
-  if (store.user) { try { return await store.getScore(game); } catch { return null; } }
+  if (store.user && game !== 'sentence') { try { return await store.getScore(game); } catch { return null; } }
   return guestScores()[game] || null;
 }
 
@@ -31,7 +32,7 @@ export async function recordResult(game, { score, streak }) {
   const best = { score: Math.max(prev.score, score), streak: Math.max(prev.streak, streak), plays: (prev.plays || 0) + 1 };
   const isNew = score > prev.score;
   let saved = true;
-  if (store.user) { try { await store.saveScore(game, best); } catch { saved = false; } }
-  else { const all = guestScores(); all[game] = best; try { localStorage.setItem(GUEST_KEY, JSON.stringify(all)); } catch { saved = false; } }
+  if (store.user && game !== 'sentence') { try { await store.saveScore(game, best); } catch { saved = false; } }
+  else { const all = guestScores(); all[game] = best; try { localStorage.setItem(scoreKey(), JSON.stringify(all)); } catch { saved = false; } }
   return { best, isNew, saved };
 }
