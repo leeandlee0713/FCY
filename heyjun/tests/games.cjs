@@ -14,7 +14,11 @@ const B=process.env.HEYJUN_URL||'http://localhost:8000/heyjun/?demo=1';
    if(game==='match'){
     const word=await page.locator('.prompt-word').innerText();
     const en=await page.evaluate(async([w,l])=>(await import('./js/content.js')).MATCH_LEVELS[l].find(x=>x.ko===w).en,[word,level]);
-    assert.equal(await page.locator('.choice').count(),i<3?2:i<6?3:4);
+    assert.equal(await page.locator('.choice').count(),level==='beginner'?(i<5?2:3):level==='intermediate'?4:(i<3?2:i<6?3:4));
+    if(level==='intermediate') {
+      const groups=await page.evaluate(async()=>{const {MATCH_LEVELS}=await import('./js/content.js');return [...document.querySelectorAll('.choice')].map(el=>MATCH_LEVELS.intermediate.find(x=>el.getAttribute('aria-label')===x.en+' 그림').group);});
+      assert.equal(new Set(groups).size,1,'intermediate distractors share a topic');
+    }
     if(i===1)await page.locator(`.choice:not([aria-label="${en} 그림"])`).first().click();
     else await page.getByRole('button',{name:en+' 그림',exact:true}).click();
    }else{
@@ -23,6 +27,7 @@ const B=process.env.HEYJUN_URL||'http://localhost:8000/heyjun/?demo=1';
      const {BLOCK_WORDS}=await import('./js/content.js');const{decompose}=await import('./js/hangul.js');
      return [...BLOCK_WORDS[l].find(x=>x.en===en).word].flatMap(c=>{const d=decompose(c);return[d.cho,d.jung,d.jong].filter(Boolean);});
     },[en,level]);
+    assert.equal(await page.locator('.block').count(),need.length+(level==='beginner'?0:3));
     for(let k=0;k<need.length;k++){
      const block=page.locator('.block:not(.used)').filter({hasText:new RegExp('^'+need[k]+'$')}).first();
      const slot=page.locator('.slot').nth(k);

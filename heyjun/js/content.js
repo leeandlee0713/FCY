@@ -163,17 +163,23 @@ export const BLOCK_WORDS = {
 
 /** Three reviewed vocabulary levels; emoji follow the existing picture style. */
 export const MATCH_LEVELS = {
-  beginner: MATCH_ITEMS.filter(x => ['사과','바나나','포도','우유','빵','개','새','나무','집','책','달','해'].includes(x.ko)),
-  intermediate: [
-    ['자전거','bicycle','🚲'],['비행기','airplane','✈️'],['병원','hospital','🏥'],['학교','school','🏫'],['연필','pencil','✏️'],
-    ['안경','glasses','👓'],['가방','bag','🎒'],['당근','carrot','🥕'],['감자','potato','🥔'],['토끼','rabbit','🐰'],
-  ].map(([ko,en,pic])=>({ko,en,pic})),
+  beginner: MATCH_ITEMS.filter(x => ['사과','꽃','포도','우유','빵','개','새','나무','집','책','달','해'].includes(x.ko)),
+  intermediate: [ // 같은 주제의 네 그림을 구별한다. 초급 단어와 겹치지 않는다.
+    ['거북이','turtle','🐢','animal'],['코끼리','elephant','🐘','animal'],['원숭이','monkey','🐒','animal'],['펭귄','penguin','🐧','animal'],
+    ['운동화','sneakers','👟','clothing'],['목도리','scarf','🧣','clothing'],['장갑','gloves','🧤','clothing'],['양말','socks','🧦','clothing'],
+    ['당근','carrot','🥕','food'],['옥수수','corn','🌽','food'],['달걀','egg','🥚','food'],['팝콘','popcorn','🍿','food'],
+  ].map(([ko,en,pic,group])=>({ko,en,pic,group})),
   advanced: [
     ['소방차','fire engine','🚒'],['구급차','ambulance','🚑'],['인공위성','satellite','🛰️'],['현미경','microscope','🔬'],['망원경','telescope','🔭'],
     ['소화기','fire extinguisher','🧯'],['수하물','luggage','🧳'],['안전모','safety helmet','⛑️'],['회전목마','carousel','🎠'],['고속열차','high-speed train','🚄'],
   ].map(([ko,en,pic])=>({ko,en,pic})),
 };
-BLOCK_WORDS.intermediate = BLOCK_WORDS.batchim;
+// 중급은 한 글자 받침 연습 대신 2~3글자 단어를 조립한다. 모든 단어에 받침이 있다.
+BLOCK_WORDS.intermediate = [
+  ['거북이','turtle','🐢'],['강아지','puppy','🐶'],['운동화','sneakers','👟'],['목도리','scarf','🧣'],
+  ['장갑','gloves','🧤'],['양말','socks','🧦'],['달걀','egg','🥚'],['연필','pencil','✏️'],
+  ['가방','bag','🎒'],['우산','umbrella','☂️'],['옥수수','corn','🌽'],['공책','notebook','📓'],
+].map(([word,en,pic])=>({word,en,pic}));
 BLOCK_WORDS.advanced = MATCH_LEVELS.advanced.map(({ko,en,pic})=>({word:ko,en,pic}));
 
 /** English → Korean: one unambiguous answer, verb/conjugation feedback. */

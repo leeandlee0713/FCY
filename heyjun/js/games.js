@@ -82,9 +82,21 @@ async function startScreen(root, id, extraHtml, startLabel = bi('시작하기', 
 }
 
 // ── 게임 A: 한글 짝 맞추기 (단어 → 그림 고르기) ───────────────────
-const levelButtons = `<p><strong>${bi('레벨을 선택하세요', 'Choose a level')}</strong></p><p class="small muted">${bi('짝 맞추기·블록 기록은 각 게임의 모든 레벨을 합산합니다.', 'Word and block records combine all levels within each game.')}</p><div class="btn-row">${[['beginner','초급','Beginner'],['intermediate','중급','Intermediate'],['advanced','고급','Advanced']].map(([key,ko,en])=>`<button class="btn btn-primary btn-lg" data-level="${key}">${bi(ko,en)}</button>`).join('')}</div>`;
+const LEVEL_GUIDES = {
+  match: [
+    ['1~2글자 생활 단어 · 그림 2→3개', 'Everyday words · 2–3 pictures'],
+    ['2~3글자 단어 · 같은 주제 그림 4개', 'Longer words · 4 pictures in one topic'],
+    ['전문·복합 어휘 · 그림 2→3→4개', 'Specialized words · 2–4 pictures'],
+  ],
+  blocks: [
+    ['1~2글자 · 받침 없음 · 필요한 블록만', 'Short words · no final consonants · exact blocks'],
+    ['2~3글자 · 받침 포함 · 여분 블록 3개', 'Longer words · final consonants · 3 extra blocks'],
+    ['긴 복합어 · 복잡한 조합 · 여분 블록 3개', 'Long compound words · complex spelling · 3 extra blocks'],
+  ],
+};
+const levelButtons = (game) => `<p><strong>${bi('레벨을 선택하세요', 'Choose a level')}</strong></p><p class="small muted">${bi('짝 맞추기·블록 기록은 각 게임의 모든 레벨을 합산합니다.', 'Word and block records combine all levels within each game.')}</p><div class="stack">${[['beginner','초급','Beginner'],['intermediate','중급','Intermediate'],['advanced','고급','Advanced']].map(([key,ko,en],i)=>`<button class="btn btn-primary btn-lg level-choice" data-level="${key}"><span>${bi(ko,en)}</span><small>${bi(...LEVEL_GUIDES[game][i])}</small></button>`).join('')}</div>`;
 async function playMatch(root) {
-  await startScreen(root, 'match', levelButtons);
+  await startScreen(root, 'match', levelButtons('match'));
   root.querySelectorAll('[data-level]').forEach(b => b.onclick = () => run(b.dataset.level));
   function run(level) {
     const pool = MATCH_LEVELS[level];
@@ -92,8 +104,9 @@ async function playMatch(root) {
     let i = 0, score = 0, streak = 0, bestStreak = 0;
     const ask = () => {
       const item = questions[i];
-      const n = i < 3 ? 2 : i < 6 ? 3 : 4; // 처음에는 그림 2개, 이후 3~4개
-      const options = shuffle([item, ...shuffle(pool.filter((x) => x.ko !== item.ko)).slice(0, n - 1)]);
+      const n = level === 'beginner' ? (i < 5 ? 2 : 3) : level === 'intermediate' ? 4 : (i < 3 ? 2 : i < 6 ? 3 : 4);
+      const distractors = pool.filter(x => x.ko !== item.ko && (level !== 'intermediate' || x.group === item.group));
+      const options = shuffle([item, ...shuffle(distractors).slice(0, n - 1)]);
       root.innerHTML = `${topBar(i, score, streak)}
         <div class="prompt-card"><p class="muted">${bi('이 단어의 그림은?', 'Which picture matches this word?')}</p>
           <div class="prompt-word" lang="ko">${esc(item.ko)}</div></div>
@@ -128,7 +141,7 @@ async function playMatch(root) {
 // ── 게임 B: 한글 블록 조립 ────────────────────────────────────────
 const POS_LABEL = { cho: '자음', jung: '모음', jong: '받침' };
 async function playBlocks(root) {
-  await startScreen(root, 'blocks', levelButtons);
+  await startScreen(root, 'blocks', levelButtons('blocks'));
   root.querySelectorAll('[data-level]').forEach((b) => { b.onclick = () => run(b.dataset.level); });
 
   function run(level) {
@@ -146,7 +159,7 @@ async function playBlocks(root) {
       });
       const need = slots.map((x) => x.want);
       const pool = shuffle([...CHO.filter((c) => !'ㄲㄸㅃㅆㅉ'.includes(c)), ...JUNG.slice(0, 21).filter((v) => 'ㅏㅓㅗㅜㅡㅣㅐㅔㅑㅕㅛㅠ'.includes(v))]
-        .filter((j) => !need.includes(j))).slice(0, 3);
+        .filter((j) => !need.includes(j))).slice(0, level === 'beginner' ? 0 : 3);
       blocks = shuffle([...need, ...pool]).map((jamo, id) => ({ id, jamo }));
       draw();
       root.scrollIntoView({ block: 'start', behavior: 'instant' });

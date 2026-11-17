@@ -41,3 +41,19 @@ test('각 레벨의 10개 이상 고유 어휘와 모든 음절이 정확하게 
     }
   }
 });
+
+test('초급과 중급의 읽기·조립 부담이 구별된다', () => {
+  const beginner = new Set(MATCH_LEVELS.beginner.map(x=>x.ko));
+  assert.ok([...beginner].every(w=>w.length<=2));
+  for(const x of MATCH_LEVELS.intermediate) {
+    assert.ok(!beginner.has(x.ko));
+    assert.ok(x.ko.length>=2 && x.ko.length<=3);
+    assert.equal(MATCH_LEVELS.intermediate.filter(y=>y.group===x.group).length,4);
+  }
+  const blockCount=w=>[...w].reduce((n,ch)=>n+2+(decompose(ch).jong?1:0),0);
+  for(const {word} of BLOCK_WORDS.intermediate) {
+    assert.ok(word.length>=2 && word.length<=3);
+    assert.ok([...word].some(ch=>decompose(ch).jong));
+    assert.ok(blockCount(word)>Math.max(...BLOCK_WORDS.beginner.map(x=>blockCount(x.word))));
+  }
+});

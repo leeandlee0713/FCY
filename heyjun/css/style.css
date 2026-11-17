@@ -306,3 +306,6 @@ th { font-size: var(--fs-sm); color: var(--c-muted); font-weight: 650; }
 /* Sentence choices and longer advanced words retain the existing pastel system. */
 .sentence-choice { min-height:64px; padding:16px; text-align:left; font-size:1.05rem; overflow-wrap:anywhere; }
 .syllables { flex-wrap:wrap; }
+
+.level-choice { padding:16px 24px; border-radius:24px; flex-direction:column; align-items:flex-start; text-align:left; white-space:normal; }
+.level-choice small { font-weight:400; line-height:1.6; }
