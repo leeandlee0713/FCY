@@ -132,6 +132,26 @@ export async function createLiveStore({ url, key }) {
       return ok(await sb.storage.from('lesson-files').createSignedUrl(file.path, 600, { download: file.mime?.startsWith('image/') ? false : file.name })).signedUrl;
     },
 
+    // Private classroom notes use their own RLS-protected table, never public resources.
+    async listClassroomNotes(studentId) {
+      if (!user || !isId(studentId)) return [];
+      return ok(await sb.from('classroom_notes').select('*').eq('student_id', studentId).order('created_at', {ascending:false}));
+    },
+    async getClassroomNote(studentId, id) {
+      if (!user || !isId(studentId) || !isId(id)) return null;
+      return ok(await sb.from('classroom_notes').select('*').eq('student_id', studentId).eq('id', id).maybeSingle());
+    },
+    async saveClassroomNote(studentId, r) {
+      const row = {category:r.category, title:r.title, summary:r.summary, explanation:r.explanation,
+        examples:r.examples, practice:r.practice, published:r.published, updated_at:new Date().toISOString()};
+      const result = r.id ? sb.from('classroom_notes').update(row).eq('student_id',studentId).eq('id',r.id)
+        : sb.from('classroom_notes').insert({...row, student_id:studentId});
+      return ok(await result.select('id').single()).id;
+    },
+    async deleteClassroomNote(studentId, id) {
+      ok(await sb.from('classroom_notes').delete().eq('student_id',studentId).eq('id',id).select('id').single());
+    },
+
     // ── 학습실 ─────────────────────────────────────
     async listResources() { return withStoryTemplate(ok(await sb.from('resources').select('*').order('created_at', { ascending: false })).map(decodeResource)); },
     async getResource(id) { if (storyTemplate(id)) return storyTemplate(id); if (!isId(id)) return null; return decodeResource(ok(await sb.from('resources').select('*').eq('id', id).maybeSingle())); },

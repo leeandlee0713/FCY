@@ -1,5 +1,6 @@
+import { classroomList } from './classroom-notes.js';
 // 화면들. 각 함수는 { title, html, mount(root) } 를 돌려준다.
-import { $, $$, esc, bi, toast, fmtDate, fmtSize, safeUrl, submitWith, LEVELS, CATEGORIES, TOPICS } from './util.js';
+import { $, $$, esc, bi, toast, fmtDate, fmtSize, safeUrl, submitWith, LEVELS, CATEGORIES, CLASS_CATEGORIES, TOPICS } from './util.js';
 import { store } from './store.js';
 import { GAME_LIST, mountGame } from './games.js';
 
@@ -226,12 +227,13 @@ export async function lessons() {
 }
 
 // ── 학생 전용 수업실 ─────────────────────────────────────────────
-export async function classroom(id) {
+export async function classroom(id, query = {}) {
   if (!store.user) return forbidden(bi('학생 전용 수업실입니다. 로그인해 주세요.', 'This is a private classroom. Please log in.'));
   const data = await store.getStudent(id);
   if (!data) return forbidden(bi('이 수업실은 해당 학생과 강사만 볼 수 있습니다.', 'Only this student and the teacher can open this classroom.'));
   const isTeacher = store.user.role === 'teacher';
   const { student, materials } = data;
+  const notes = classroomList(id, await store.listClassroomNotes(id), query, isTeacher);
   const fileById = new Map(materials.flatMap((m) => m.files).map((f) => [f.id, f]));
   const isImg = (f) => (f.mime || '').startsWith('image/');
 
@@ -267,9 +269,10 @@ export async function classroom(id) {
 
   const html = page(`<span class="tag tag-lav">${bi('학생 전용', 'Private classroom')}</span><h1 style="margin-top:8px">${esc(student.name)} <span class="en" lang="en">classroom</span></h1>
     <p>${isTeacher ? bi('이 페이지는 강사와 이 학생만 볼 수 있습니다.', 'Only you and this student can see this page.') : bi('이 페이지는 나와 강사만 볼 수 있습니다.', 'Only you and the teacher can see this page.')}</p>`,
-    `<div class="stack" id="materials">${materials.map(viewCard).join('')}</div>`);
+    ` ${notes.html}<section class="section"><h2>${bi('수업 파일·이미지·링크', 'Lesson files, images and links')}</h2><div class="stack" id="materials">${materials.map(viewCard).join('')}</div></section>`);
 
   return { title: `${student.name} 수업실`, html, mount(root) {
+    notes.mount(root);
     const box = $('#materials', root);
     const loadImages = () => $$('[data-img]', box).forEach(async (img) => {
       try { img.src = await store.fileUrl(fileById.get(img.dataset.img)); } catch { img.alt = '이미지를 불러오지 못했습니다'; }
@@ -350,15 +353,19 @@ export async function learn(query = {}) {
   } };
 }
 
-export async function learnDetail(id) {
-  const r = await store.getResource(id);
+export async function learnDetail(id, { studentId } = {}) {
+  if (studentId && (!store.user || !await store.getStudent(studentId))) return forbidden();
+  const r = studentId ? await store.getClassroomNote(studentId, id) : await store.getResource(id);
+  const categories = studentId ? CLASS_CATEGORIES : CATEGORIES;
+  const base = studentId ? `#/lessons/${studentId}` : '#/learn';
+  const detailBase = studentId ? `${base}/notes` : base;
   if (!r) return notFound();
   const isTeacher = store.user?.role === 'teacher';
-  const html = page(`<p><a href="#/learn?cat=${esc(r.category)}">← ${bi(...CATEGORIES[r.category])}</a></p>
-    <div class="tags">${catTag(r.category)}${levelTag(r.level)}${r.is_sample ? sampleTag : ''}</div>
-    <h1>${esc(r.title)}</h1><p>${esc(r.summary)}</p>
+  const html = page(`<p><a href="${base}?cat=${esc(r.category)}">← ${bi(...categories[r.category])}</a></p>
+    <div class="tags">${studentId ? `<span class="tag">${bi(...categories[r.category])}</span>` : catTag(r.category)}${studentId ? '' : levelTag(r.level)}${r.is_sample ? sampleTag : ''}</div>
+    ${studentId ? `<p class="notice small">${bi('이 수업실의 학생과 강사만 볼 수 있습니다.', 'Only this student and the teacher can read this note.')}</p>` : ''}<h1>${esc(r.title)}</h1><p>${esc(r.summary)}</p>
     ${r.is_sample ? `<p class="notice small">${bi('이 자료는 예시입니다. 강사가 실제 자료로 바꿀 수 있습니다.', 'This is a sample note. The teacher can replace it.')}</p>` : ''}
-    ${isTeacher ? `<div class="btn-row"><a class="btn btn-secondary btn-sm" href="#/learn/${esc(r.id)}/edit">${bi('수정', 'Edit')}</a>
+    ${isTeacher ? `<div class="btn-row"><a class="btn btn-secondary btn-sm" href="${detailBase}/${esc(r.id)}/edit">${bi('수정', 'Edit')}</a>
       ${r.is_template ? '' : `<button class="btn btn-danger btn-sm" data-act="delete">${bi('삭제', 'Delete')}</button>`}</div>` : ''}`,
     `<article class="prose stack">
       <section><h2>1. ${bi('설명', 'Explanation')}</h2>${paragraphs(r.explanation) || `<p class="muted">${bi('설명이 아직 없습니다.', 'No explanation yet.')}</p>`}</section>
@@ -371,8 +378,8 @@ export async function learnDetail(id) {
           <div class="quiz-fb" aria-live="polite"></div></div>`).join('')
           : `<p class="muted">${bi('연습 문제가 아직 없습니다.', 'No practice yet.')}</p>`}</section>
     </article>
-    <div class="card tint-lav row-between" style="margin-top:32px"><div><strong>${bi('더 깊이 배우고 싶다면', 'Want to go deeper?')}</strong></div>
-      <a class="btn btn-secondary" href="#/apply">${bi('1:1 수업 신청', 'Apply for 1:1 lessons')}</a></div>`);
+    ${studentId ? '' : `<div class="card tint-lav row-between" style="margin-top:32px"><div><strong>${bi('더 깊이 배우고 싶다면', 'Want to go deeper?')}</strong></div>
+      <a class="btn btn-secondary" href="#/apply">${bi('1:1 수업 신청', 'Apply for 1:1 lessons')}</a></div>`}`);
   return { title: r.title, html, mount(root) {
     $$('.quiz', root).forEach((quiz) => {
       const p = r.practice[+quiz.dataset.quiz];
@@ -387,21 +394,25 @@ export async function learnDetail(id) {
     });
     $('[data-act=delete]', root)?.addEventListener('click', async () => {
       if (!confirm('이 자료를 삭제할까요? 되돌릴 수 없습니다.')) return;
-      try { await store.deleteResource(r.id); toast('삭제했습니다.'); go('#/learn'); } catch (e) { toast(e.message, 'bad'); }
+      try { if (studentId) await store.deleteClassroomNote(studentId, r.id); else await store.deleteResource(r.id); toast('삭제했습니다.'); go(base); } catch (e) { toast(e.message, 'bad'); }
     });
   } };
 }
 
-export async function learnEdit(id) {
+export async function learnEdit(id, { studentId } = {}) {
   if (store.user?.role !== 'teacher') return forbidden(bi('학습 자료는 강사만 작성할 수 있습니다.', 'Only the teacher can write notes.'));
-  const r = id ? await store.getResource(id) : { category: 'expression', level: 'beginner', title: '', summary: '', explanation: '', examples: [], practice: [], published: true };
+  if (studentId && !await store.getStudent(studentId)) return forbidden();
+  const categories = studentId ? CLASS_CATEGORIES : CATEGORIES;
+  const base = studentId ? `#/lessons/${studentId}` : '#/learn';
+  const detailBase = studentId ? `${base}/notes` : base;
+  const r = id ? (studentId ? await store.getClassroomNote(studentId, id) : await store.getResource(id)) : { category: studentId ? 'lesson' : 'expression', ...(studentId ? {} : {level: 'beginner'}), title: '', summary: '', explanation: '', examples: [], practice: [], published: true };
   if (!r) return notFound();
   const opt = (map, cur) => Object.entries(map).map(([k, v]) => `<option value="${k}" ${k === cur ? 'selected' : ''}>${v[0]} · ${v[1]}</option>`).join('');
-  const html = page(`<h1>${id ? bi('자료 수정', 'Edit note') : bi('새 자료 작성', 'New note')}</h1>`,
+  const html = page(`<p><a href="${base}">${bi('자료 목록으로', 'Back to notes')}</a></p><h1>${id ? bi('자료 수정', 'Edit note') : bi('새 자료 작성', 'New note')}</h1>${studentId ? `<p>${bi('이 학생의 개인 수업실에 저장됩니다.', 'Saved only in this student’s private classroom.')}</p>` : ''}`,
     `<form class="form card" id="res-form" style="max-width:760px">${r.is_template ? '<p class="notice">예시 원본입니다. 저장하면 관리할 수 있는 새 동화책이 등록됩니다. Save to create your own editable story.</p>' : ''}
-      <div class="grid g2">
-        <div class="field"><label for="r-cat">${bi('카테고리', 'Category')}</label><select id="r-cat" name="category">${opt(CATEGORIES, r.category)}</select></div>
-        <div class="field"><label for="r-level">${bi('학습 수준', 'Level')}</label><select id="r-level" name="level">${opt(LEVELS, r.level)}</select></div>
+      <div class="${studentId ? '' : 'grid g2'}">
+        <div class="field"><label for="r-cat">${bi('카테고리', 'Category')}</label><select id="r-cat" name="category">${opt(categories, r.category)}</select></div>
+        ${studentId ? '' : `<div class="field"><label for="r-level">${bi('학습 수준', 'Level')}</label><select id="r-level" name="level">${opt(LEVELS, r.level)}</select></div>`}
       </div>
       <div class="field"><label for="r-title">${bi('제목', 'Title')}</label><input id="r-title" name="title" type="text" required maxlength="120" value="${esc(r.title)}"></div>
       <div class="field"><label for="r-sum">${bi('짧은 설명', 'Short summary')}</label><input id="r-sum" name="summary" type="text" maxlength="300" value="${esc(r.summary)}"></div>
@@ -413,9 +424,9 @@ export async function learnEdit(id) {
       <div class="field"><label for="r-pr">3. ${bi('간단한 연습', 'Practice')}</label>
         <textarea id="r-pr" name="practice" rows="5">${esc((r.practice || []).map((p) => `${p.q} | ${p.options.join(' ; ')} | ${+p.answer + 1} | ${p.explain || ''}`).join('\n'))}</textarea>
         <p class="hint">한 줄에 한 문제: <code>질문 | 보기1 ; 보기2 ; 보기3 | 정답 번호 | 해설</code></p></div>
-      <div class="field"><label><input type="checkbox" name="published" ${r.published !== false ? 'checked' : ''}> ${bi('공개하기', 'Published')}</label></div>
+      <div class="field"><label><input type="checkbox" name="published" ${r.published !== false ? 'checked' : ''}> ${studentId ? bi('학생에게 표시', 'Visible to this student') : bi('공개하기', 'Published')}</label></div>
       ${status}
-      <div class="btn-row"><button class="btn btn-primary" type="submit">${bi('저장', 'Save')}</button><a class="btn btn-ghost" href="${id ? `#/learn/${esc(id)}` : '#/learn'}">${bi('취소', 'Cancel')}</a></div>
+      <div class="btn-row"><button class="btn btn-primary" type="submit">${bi('저장', 'Save')}</button><a class="btn btn-ghost" href="${id ? `${detailBase}/${esc(id)}` : base}">${bi('취소', 'Cancel')}</a></div>
     </form>`);
   return { title: id ? '자료 수정' : '새 자료', html, mount(root) {
     const form = $('#res-form', root);
@@ -433,10 +444,11 @@ export async function learnEdit(id) {
           if (!q || options.length < 2 || !(answer >= 0 && answer < options.length)) throw new Error(`연습 ${n + 1}번째 줄의 형식을 확인해 주세요. (질문 | 보기1 ; 보기2 | 정답 번호 | 해설)`);
           return { q, options, answer, explain };
         });
-        return store.saveResource({ id: id || undefined, category: d.category, level: d.level, title: d.title.trim(), summary: d.summary.trim(),
-          explanation: d.explanation.trim(), examples, practice, published: !!d.published });
+        const note = { id: id || undefined, category: d.category, title: d.title.trim(), summary: d.summary.trim(),
+          explanation: d.explanation.trim(), examples, practice, published: !!d.published };
+        return studentId ? store.saveClassroomNote(studentId, note) : store.saveResource({ ...note, level: d.level });
       }, { okMsg: '저장했습니다. Saved.' });
-      if (newId) go(`#/learn/${newId}`);
+      if (newId) go(`${detailBase}/${newId}`);
     });
   } };
 }

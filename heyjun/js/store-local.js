@@ -62,6 +62,7 @@ export async function createLocalStore() {
   let db;
   try { db = JSON.parse(localStorage.getItem(KEY)); } catch { db = null; }
   if (!db || !db.users) db = seed();
+  db.classroomNotes ||= [];
   const save = () => localStorage.setItem(KEY, JSON.stringify(db));
   save();
 
@@ -139,6 +140,7 @@ export async function createLocalStore() {
       db.files = db.files.filter((f) => f.student_id !== id);
       db.materials = db.materials.filter((m) => m.student_id !== id);
       db.students = db.students.filter((s) => s.id !== id);
+      db.classroomNotes = db.classroomNotes.filter((r) => r.student_id !== id);
       save();
     },
     async linkStudent(id, email) {
@@ -183,6 +185,29 @@ export async function createLocalStore() {
       const blob = await idbDo('readonly', (st) => st.get(file.id));
       if (!blob) throw new Error('파일을 찾을 수 없습니다.');
       return URL.createObjectURL(blob);
+    },
+
+    async listClassroomNotes(studentId) {
+      if (!canSeeStudent(db.students.find(s=>s.id===studentId))) return [];
+      return db.classroomNotes.filter(r=>r.student_id===studentId && (isTeacher()||r.published)).sort((a,b)=>b.created_at.localeCompare(a.created_at));
+    },
+    async getClassroomNote(studentId, id) {
+      return (await this.listClassroomNotes(studentId)).find(r=>r.id===id) || null;
+    },
+    async saveClassroomNote(studentId, r) {
+      needTeacher();
+      if (!db.students.some(s=>s.id===studentId)) throw new Error('수업실이 없습니다. Classroom not found.');
+      if (!['lesson','diary','conversation'].includes(r.category) || !r.title.trim()) throw new Error('제목과 카테고리를 확인하세요. Check title and category.');
+      const row = {category:r.category,title:r.title,summary:r.summary,explanation:r.explanation,examples:r.examples,practice:r.practice,published:r.published,updated_at:now()};
+      if (r.id) {
+        const existing=db.classroomNotes.find(n=>n.id===r.id && n.student_id===studentId);
+        if (!existing) throw new Error('자료가 없습니다. Note not found.');
+        Object.assign(existing,row);save();return r.id;
+      }
+      const id=uid();db.classroomNotes.push({...row,id,student_id:studentId,created_at:now()});save();return id;
+    },
+    async deleteClassroomNote(studentId,id) {
+      needTeacher();db.classroomNotes=db.classroomNotes.filter(r=>!(r.id===id&&r.student_id===studentId));save();
     },
 
     // ── 학습실 ─────────────────────────────────────

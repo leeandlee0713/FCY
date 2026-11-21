@@ -72,3 +72,5 @@ export async function submitWith(form, fn, { okMsg } = {}) {
 export const LEVELS = { beginner: ['초급', 'Beginner'], intermediate: ['중급', 'Intermediate'], advanced: ['고급', 'Advanced'] };
 export const CATEGORIES = { grammar: ['문법', 'Grammar'], expression: ['표현', 'Expressions'], storybook: ['동화책', 'Storybooks'] };
 export const TOPICS = { question: ['한국어 질문', 'Questions'], experience: ['학습 경험', 'Study stories'], life: ['한국 생활 정보', 'Life in Korea'] };
+
+export const CLASS_CATEGORIES = { lesson: ['수업내용', 'Lesson notes'], diary: ['일기', 'Diary'], conversation: ['대화', 'Conversation'] };

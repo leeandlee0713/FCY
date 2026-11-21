@@ -111,3 +111,18 @@ Playwright와 Chromium이 필요하다. `CHROMIUM_PATH`로 브라우저 경로�
 - 블록 초급: 받침 없는 1~2글자, 필요한 블록만 제공한다.
 - 블록 중급: 받침이 있는 2~3글자 단어 12개(거북이·운동화·달걀 등), 여분 블록 3개를 제공한다. 모든 중급 단어는 초급 단어보다 조립할 블록 수가 많다.
 - 고급 어휘와 선택지·여분 블록 규칙은 유지한다. 시작 화면에서 각 레벨의 차이를 한국어·영어로 안내한다.
+
+### 2026-11-21 개인 수업실 학습 자료
+
+강사 로그인 → **1:1 수업 → 학생 이름 → 새 자료 작성**에서 학생 전용 자료를 등록한다. 카테고리는 **수업내용 / 일기 / 대화**이며 개인 수업실에는 학습 수준 입력·필터·저장 필드가 없다. 공개 학습실의 수준 기능은 유지한다.
+
+- 학습실과 같은 카테고리 버튼·검색·자료 개수·카드 목록을 제공한다. 상세 화면은 설명 → 예문 → 연습 순서다.
+- 기존 수업자료 1~3의 파일·이미지·링크는 목록 아래에 보존한다.
+- **학생에게 표시**를 해제하면 강사만 보는 초안으로 저장된다. 표시하더라도 해당 학생과 강사만 볼 수 있고 공개 학습실에는 올라가지 않는다. 등록·수정·삭제는 강사만 한다.
+- 저장소는 `public.classroom_notes`. 학생 삭제 시 해당 자료도 삭제된다. URL뿐 아니라 Postgres RLS가 학생별 읽기·강사 전용 쓰기 권한을 검사한다.
+- 기존 DB에는 `supabase/migrations/20261121131554_classroom_notes.sql`을 한 번 적용한다(현재 HEYJUN 운영 DB 적용 완료). 새 설치용 `schema.sql`에도 동일 정의가 포함되어 있으므로 새 설치에서 두 파일을 중복 적용하지 않는다.
+- `js/classroom-notes.js`가 목록, `views.js`의 공통 자료 편집·상세 화면이 작성/읽기를 담당한다. 개인 자료 URL은 `#/lessons/<student-id>/notes/<note-id>`이다.
+
+검증: `node heyjun/tests/classroom.cjs`는 데모 저장소에서 세 카테고리 CRUD, 검색, 연습, 재접속, 초안 숨김, 역할별 화면, 직접 URL 차단, 오류 상태, 390/768/1440px 화면을 확인한다. `tests/classroom-rls.sql`은 실제 DB에서 격리된 임시 데이터로 강사 CRUD·학생 A/B 격리·일반 회원/방문자 거절·초안 숨김·학생 쓰기 거절을 확인하고 전부 롤백한다. SQL 도구에서는 파일 전체를 하나의 요청으로 실행한다. psql에서는 `psql -v ON_ERROR_STOP=1 -f tests/classroom-rls.sql`로 실행한다.
+
+DB advisor에 새 테이블 관련 경고는 없었다. 기존 [강사 확인이 있는 계정 연결 RPC 경고](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)와 [유출 비밀번호 검사 미설정 경고](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection)는 이번 변경 범위 밖이며 변경하지 않았다.
