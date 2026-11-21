@@ -325,3 +325,11 @@ th { font-size: var(--fs-sm); color: var(--c-muted); font-weight: 650; }
   .conversation-line .ko { font-size: 1.125rem; }
   .conversation-line [lang="en"] { font-size: var(--fs-base); }
 }
+
+/* The original numbered classroom materials also support storybook dialogue. */
+.dialogue-material { padding: var(--s3) 0; border-top: 1px solid var(--c-line); }
+.dialogue-material > .row-between { margin-bottom: var(--s3); gap: var(--s2); align-items: flex-start; }
+.dialogue-material > .row-between h3 { margin: 0; }
+.dialogue-topic + .dialogue-topic { margin-top: var(--s5); }
+.dialogue-topic h4 { margin: 0 0 var(--s3); font-size: var(--fs-lg); font-weight: 650; }
+.material-dialogue .conversation-line .ko { display: block; }

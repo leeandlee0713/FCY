@@ -1,3 +1,4 @@
+import { isDialogueMaterial, materialDialogue } from './material-dialogue.js';
 import { classroomList } from './classroom-notes.js';
 // 화면들. 각 함수는 { title, html, mount(root) } 를 돌려준다.
 import { $, $$, esc, bi, toast, fmtDate, fmtSize, safeUrl, submitWith, LEVELS, CATEGORIES, CLASS_CATEGORIES, TOPICS } from './util.js';
@@ -238,13 +239,14 @@ export async function classroom(id, query = {}) {
   const isImg = (f) => (f.mime || '').startsWith('image/');
 
   const viewCard = (m) => {
+    const dialogue = isDialogueMaterial(m.title);
     const blank = !m.title && !m.description && !m.links.length && !m.files.length;
     const imgs = m.files.filter(isImg), docs = m.files.filter((f) => !isImg(f));
-    return `<section class="card material" id="mat-${m.slot}">
+    return `<section class="material ${dialogue ? 'dialogue-material' : 'card'}" id="mat-${m.slot}">
       <div class="row-between"><h3><span class="tag">${bi(`수업자료 ${m.slot}`, `Material ${m.slot}`)}</span> ${esc(m.title)}</h3>
         ${isTeacher ? `<button class="btn btn-secondary btn-sm" data-edit="${m.slot}">${bi('수정', 'Edit')}</button>` : ''}</div>
       ${blank ? `<p class="muted">${bi('아직 등록된 자료가 없습니다.', 'Nothing here yet.')}</p>` : ''}
-      ${m.description ? `<div class="prose">${paragraphs(m.description)}</div>` : ''}
+      ${m.description ? (dialogue ? materialDialogue(m.description) : `<div class="prose">${paragraphs(m.description)}</div>`) : ''}
       ${imgs.length ? `<div class="thumbs">${imgs.map((f) => `<figure><img data-img="${esc(f.id)}" alt="${esc(f.name)}"><figcaption>${esc(f.name)}</figcaption></figure>`).join('')}</div>` : ''}
       ${docs.length ? `<ul class="file-list">${docs.map((f) => `<li><button class="btn btn-secondary btn-sm" data-open="${esc(f.id)}">📎 ${esc(f.name)}</button><span class="meta">${fmtSize(f.size)}</span></li>`).join('')}</ul>` : ''}
       ${m.links.length ? `<ul>${m.links.map((l) => `<li><a href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener noreferrer">${esc(l.label || l.url)}</a></li>`).join('')}</ul>` : ''}
@@ -254,7 +256,7 @@ export async function classroom(id, query = {}) {
     <form class="form" data-save="${m.slot}" style="max-width:none">
       <h3><span class="tag">${bi(`수업자료 ${m.slot}`, `Material ${m.slot}`)}</span> ${bi('수정', 'Edit')}</h3>
       <div class="field"><label for="m-title-${m.slot}">${bi('제목', 'Title')}</label><input id="m-title-${m.slot}" name="title" type="text" maxlength="120" value="${esc(m.title)}"></div>
-      <div class="field"><label for="m-desc-${m.slot}">${bi('설명', 'Description')}</label><textarea id="m-desc-${m.slot}" name="description" maxlength="10000">${esc(m.description)}</textarea></div>
+      <div class="field"><label for="m-desc-${m.slot}">${bi('설명', 'Description')}</label><textarea id="m-desc-${m.slot}" name="description" maxlength="10000">${esc(m.description)}</textarea>${isDialogueMaterial(m.title) ? `<p class="hint">${bi('한 줄에 한 대사를 입력하세요. 번역은 한국어 | English 형태로 입력하면 아래에 표시됩니다. 빈 줄로 주제를 나눌 수 있습니다.', 'One turn per line. Use Korean | English for a translation below. Separate topics with a blank line.')}</p>` : ''}</div>
       <div class="field"><label for="m-links-${m.slot}">${bi('링크', 'Links')}</label>
         <textarea id="m-links-${m.slot}" name="links" rows="3">${esc(m.links.map((l) => `${l.label} | ${l.url}`).join('\n'))}</textarea>
         <p class="hint">한 줄에 하나씩: <code>이름 | https://주소</code></p></div>
