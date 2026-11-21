@@ -20,6 +20,19 @@ const status = '<p class="form-status" role="alert" tabindex="-1" hidden></p>';
 const honeypot = '<div class="hp" aria-hidden="true"><label>Website <input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>';
 const paragraphs = (text) => String(text || '').split(/\n{2,}/).map((p) => `<p>${esc(p)}</p>`).join('');
 
+function practiceQuiz(p, i, isConversation) {
+  const instruction = '다음에 나올 말로 알맞은 것은?';
+  const question = String(p.q || '').trim();
+  const cue = isConversation && question.endsWith(instruction)
+    ? question.slice(0, -instruction.length).trim() : '';
+  return `<div class="quiz${cue ? ' quiz-next-line' : ''}" data-quiz="${i}">
+    ${cue ? `<p class="quiz-cue" id="quiz-${i}-prompt"><strong>Q${i + 1}. ${esc(cue)}</strong></p>
+      <p>${instruction} <span class="en" lang="en">Choose the next line.</span></p>`
+      : `<p id="quiz-${i}-prompt"><strong>Q${i + 1}.</strong> ${esc(p.q)}</p>`}
+    <div class="opts" role="group" aria-labelledby="quiz-${i}-prompt">${p.options.map((o, k) => `<button class="opt" data-k="${k}">${cue ? `<strong>${esc(o)}</strong>` : esc(o)}</button>`).join('')}</div>
+    <div class="quiz-fb" aria-live="polite"></div></div>`;
+}
+
 export const notFound = () => ({ title: '페이지 없음', html: page(`<h1>${bi('페이지를 찾을 수 없습니다', 'Page not found')}</h1>`, `<a class="btn btn-primary" href="#/">${bi('첫 화면으로', 'Go home')}</a>`) });
 export const errorView = (e) => ({ title: '오류', html: page(`<h1>${bi('문제가 생겼습니다', 'Something went wrong')}</h1>`,
   `<p class="notice notice-bad" role="alert">${esc(e?.message || e)}</p><button class="btn btn-secondary" onclick="location.reload()">${bi('다시 시도', 'Try again')}</button>`) });
@@ -376,9 +389,8 @@ export async function learnDetail(id, { studentId } = {}) {
         ${(r.examples || []).length ? r.examples.map((x) => `<div class="example ${isConversation ? 'conversation-line' : ''}"><span class="ko" lang="ko">${esc(x.ko)}</span><span class="muted" lang="en">${esc(x.en)}</span></div>`).join('')
           : `<p class="muted">${isConversation ? bi('대화 내용을 준비 중입니다.', 'Conversation coming soon.') : bi('예문이 아직 없습니다.', 'No examples yet.')}</p>`}</section>
       ${isConversation && !(r.practice || []).length ? '' : `<section><h2>${isConversation ? bi('대화 연습', 'Practice the conversation') : '3. ' + bi('간단한 연습', 'Quick practice')}</h2>
-        ${(r.practice || []).length ? r.practice.map((p, i) => `<div class="quiz" data-quiz="${i}"><p><strong>Q${i + 1}.</strong> ${esc(p.q)}</p>
-          <div class="opts">${p.options.map((o, k) => `<button class="opt" data-k="${k}">${esc(o)}</button>`).join('')}</div>
-          <div class="quiz-fb" aria-live="polite"></div></div>`).join('')
+        ${isConversation ? `<p class="muted">${bi('위 대화의 흐름을 떠올리며 답을 골라 보세요.', 'Choose your answer based on the conversation above.')}</p>` : ''}
+        ${(r.practice || []).length ? r.practice.map((p, i) => practiceQuiz(p, i, isConversation)).join('')
           : `<p class="muted">${bi('연습 문제가 아직 없습니다.', 'No practice yet.')}</p>`}</section>`}
     </article>
     ${studentId ? '' : `<div class="card tint-lav row-between" style="margin-top:32px"><div><strong>${bi('더 깊이 배우고 싶다면', 'Want to go deeper?')}</strong></div>
