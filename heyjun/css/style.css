@@ -215,6 +215,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px
 .quiz-next-line { margin-bottom: var(--s4); }
 .quiz-next-line .quiz-cue { border-left: 4px solid var(--c-sage-soft); padding-left: var(--s2); margin-bottom: var(--s1); font-size: var(--fs-lg); }
 .quiz-next-line .opt strong { font-weight: 650; }
+.quiz-next-line .opt:disabled { color: var(--c-text); opacity: 1; cursor: default; }
 .opt { text-align: left; min-height: 52px; padding: 10px 16px; border-radius: var(--radius-sm); border: 1.5px solid var(--c-line); background: var(--c-surface); font: inherit; cursor: pointer; }
 .opt:hover:not([disabled]) { border-color: var(--c-primary); }
 .opt.is-right { background: var(--c-ok-soft); border-color: var(--c-ok); }
