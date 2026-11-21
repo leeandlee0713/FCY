@@ -309,3 +309,19 @@ th { font-size: var(--fs-sm); color: var(--c-muted); font-weight: 650; }
 
 .level-choice { padding:16px 24px; border-radius:24px; flex-direction:column; align-items:flex-start; text-align:left; white-space:normal; }
 .level-choice small { font-weight:400; line-height:1.6; }
+
+/* Private conversations use the storybook's bilingual reading rhythm. */
+.conversation-reader { max-width: 78ch; gap: var(--s4); }
+.conversation-reader .conversation-line {
+  border-left: 4px solid var(--c-sage-soft);
+  padding: var(--s1) 0 var(--s1) var(--s2);
+  margin: 0 0 var(--s3);
+  overflow-wrap: anywhere;
+}
+.conversation-reader .conversation-line:last-child { margin-bottom: 0; }
+.conversation-line .ko { font-size: var(--fs-lg); font-weight: 650; line-height: 1.75; white-space: pre-wrap; }
+.conversation-line [lang="en"] { display: block; margin-top: var(--s1); font-size: 1.125rem; line-height: 1.75; white-space: pre-wrap; }
+@media (max-width: 600px) {
+  .conversation-line .ko { font-size: 1.125rem; }
+  .conversation-line [lang="en"] { font-size: var(--fs-base); }
+}

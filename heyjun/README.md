@@ -126,3 +126,7 @@ Playwright와 Chromium이 필요하다. `CHROMIUM_PATH`로 브라우저 경로�
 검증: `node heyjun/tests/classroom.cjs`는 데모 저장소에서 세 카테고리 CRUD, 검색, 연습, 재접속, 초안 숨김, 역할별 화면, 직접 URL 차단, 오류 상태, 390/768/1440px 화면을 확인한다. `tests/classroom-rls.sql`은 실제 DB에서 격리된 임시 데이터로 강사 CRUD·학생 A/B 격리·일반 회원/방문자 거절·초안 숨김·학생 쓰기 거절을 확인하고 전부 롤백한다. SQL 도구에서는 파일 전체를 하나의 요청으로 실행한다. psql에서는 `psql -v ON_ERROR_STOP=1 -f tests/classroom-rls.sql`로 실행한다.
 
 DB advisor에 새 테이블 관련 경고는 없었다. 기존 [강사 확인이 있는 계정 연결 RPC 경고](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)와 [유출 비밀번호 검사 미설정 경고](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection)는 이번 변경 범위 밖이며 변경하지 않았다.
+
+### 개인 수업실 대화 읽기 디자인
+
+`대화` 카테고리의 상세 화면은 동화책처럼 왼쪽 세이지색 선, 굵은 한국어 대사, 아래 영어 번역을 문장별로 배치한다. 작성 화면의 `대화 내용`에 한 줄씩 `화자: 한국어 | Speaker: English`로 입력한다. 대화 상황과 연습은 선택 입력이며, 내용이 없으면 상세 화면에서 해당 영역을 생략한다. 기존 설명·예문·연습 데이터와 학생별 권한은 유지한다. 수업내용·일기·공개 학습실 화면은 기존 형태를 유지한다.

@@ -361,22 +361,23 @@ export async function learnDetail(id, { studentId } = {}) {
   const detailBase = studentId ? `${base}/notes` : base;
   if (!r) return notFound();
   const isTeacher = store.user?.role === 'teacher';
+  const isConversation = !!studentId && r.category === 'conversation';
   const html = page(`<p><a href="${base}?cat=${esc(r.category)}">← ${bi(...categories[r.category])}</a></p>
     <div class="tags">${studentId ? `<span class="tag">${bi(...categories[r.category])}</span>` : catTag(r.category)}${studentId ? '' : levelTag(r.level)}${r.is_sample ? sampleTag : ''}</div>
-    ${studentId ? `<p class="notice small">${bi('이 수업실의 학생과 강사만 볼 수 있습니다.', 'Only this student and the teacher can read this note.')}</p>` : ''}<h1>${esc(r.title)}</h1><p>${esc(r.summary)}</p>
+    ${studentId ? `<p class="${isConversation ? 'meta' : 'notice small'}">${bi('이 수업실의 학생과 강사만 볼 수 있습니다.', 'Only this student and the teacher can read this note.')}</p>` : ''}<h1>${esc(r.title)}</h1><p>${esc(r.summary)}</p>
     ${r.is_sample ? `<p class="notice small">${bi('이 자료는 예시입니다. 강사가 실제 자료로 바꿀 수 있습니다.', 'This is a sample note. The teacher can replace it.')}</p>` : ''}
     ${isTeacher ? `<div class="btn-row"><a class="btn btn-secondary btn-sm" href="${detailBase}/${esc(r.id)}/edit">${bi('수정', 'Edit')}</a>
       ${r.is_template ? '' : `<button class="btn btn-danger btn-sm" data-act="delete">${bi('삭제', 'Delete')}</button>`}</div>` : ''}`,
-    `<article class="prose stack">
-      <section><h2>1. ${bi('설명', 'Explanation')}</h2>${paragraphs(r.explanation) || `<p class="muted">${bi('설명이 아직 없습니다.', 'No explanation yet.')}</p>`}</section>
-      <section><h2>2. ${r.category === 'storybook' ? bi('동화 읽기', 'Read the story') : bi('예문', 'Examples')}</h2>
-        ${(r.examples || []).length ? r.examples.map((x) => `<div class="example"><span class="ko" lang="ko">${esc(x.ko)}</span><span class="muted" lang="en">${esc(x.en)}</span></div>`).join('')
-          : `<p class="muted">${bi('예문이 아직 없습니다.', 'No examples yet.')}</p>`}</section>
-      <section><h2>3. ${bi('간단한 연습', 'Quick practice')}</h2>
+    `<article class="prose stack ${isConversation ? 'conversation-reader' : ''}">
+      ${isConversation && !r.explanation.trim() ? '' : `<section><h2>${isConversation ? bi('대화 상황', 'Situation') : '1. ' + bi('설명', 'Explanation')}</h2>${paragraphs(r.explanation) || `<p class="muted">${bi('설명이 아직 없습니다.', 'No explanation yet.')}</p>`}</section>`}
+      <section class="${isConversation ? 'conversation-lines' : ''}"><h2>${isConversation ? bi('대화 읽기', 'Read the conversation') : '2. ' + (r.category === 'storybook' ? bi('동화 읽기', 'Read the story') : bi('예문', 'Examples'))}</h2>
+        ${(r.examples || []).length ? r.examples.map((x) => `<div class="example ${isConversation ? 'conversation-line' : ''}"><span class="ko" lang="ko">${esc(x.ko)}</span><span class="muted" lang="en">${esc(x.en)}</span></div>`).join('')
+          : `<p class="muted">${isConversation ? bi('대화 내용을 준비 중입니다.', 'Conversation coming soon.') : bi('예문이 아직 없습니다.', 'No examples yet.')}</p>`}</section>
+      ${isConversation && !(r.practice || []).length ? '' : `<section><h2>${isConversation ? bi('대화 연습', 'Practice the conversation') : '3. ' + bi('간단한 연습', 'Quick practice')}</h2>
         ${(r.practice || []).length ? r.practice.map((p, i) => `<div class="quiz" data-quiz="${i}"><p><strong>Q${i + 1}.</strong> ${esc(p.q)}</p>
           <div class="opts">${p.options.map((o, k) => `<button class="opt" data-k="${k}">${esc(o)}</button>`).join('')}</div>
           <div class="quiz-fb" aria-live="polite"></div></div>`).join('')
-          : `<p class="muted">${bi('연습 문제가 아직 없습니다.', 'No practice yet.')}</p>`}</section>
+          : `<p class="muted">${bi('연습 문제가 아직 없습니다.', 'No practice yet.')}</p>`}</section>`}
     </article>
     ${studentId ? '' : `<div class="card tint-lav row-between" style="margin-top:32px"><div><strong>${bi('더 깊이 배우고 싶다면', 'Want to go deeper?')}</strong></div>
       <a class="btn btn-secondary" href="#/apply">${bi('1:1 수업 신청', 'Apply for 1:1 lessons')}</a></div>`}`);
@@ -430,7 +431,14 @@ export async function learnEdit(id, { studentId } = {}) {
     </form>`);
   return { title: id ? '자료 수정' : '새 자료', html, mount(root) {
     const form = $('#res-form', root);
-    const labels = () => { root.querySelector('label[for=r-ex]').textContent = form.category.value === 'storybook' ? '2. 동화 본문 · Story text (한국어 | English)' : '2. 예문 · Examples'; };
+    const labels = () => {
+      const conversation = !!studentId && form.category.value === 'conversation';
+      root.querySelector('label[for=r-exp]').textContent = conversation ? '대화 상황 · Situation (선택 Optional)' : '1. 설명 · Explanation';
+      root.querySelector('label[for=r-ex]').textContent = conversation ? '대화 내용 · Conversation (한국어 | English)' : form.category.value === 'storybook' ? '2. 동화 본문 · Story text (한국어 | English)' : '2. 예문 · Examples';
+      root.querySelector('label[for=r-pr]').textContent = conversation ? '대화 연습 · Practice (선택 Optional)' : '3. 간단한 연습 · Practice';
+      const hint = form.examples.parentElement.querySelector('.hint');
+      hint.textContent = conversation ? '한 줄에 한 대사: 화자: 한국어 문장 | Speaker: English meaning. 저장하면 한국어 아래에 영어가 표시됩니다.' : '한 줄에 하나씩: 한국어 문장 | English meaning';
+    };
     form.category.onchange = labels; labels();
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
